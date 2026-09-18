@@ -1,0 +1,92 @@
+{
+  "generatedAt": "2026-09-18T18:59:41.749861+00:00",
+  "rows": {
+    "census2010": 5570,
+    "census2022": 5570,
+    "territorial": 5570
+  },
+  "uniqueMunicipalities": {
+    "census2010": 5570,
+    "census2022": 5570,
+    "territorial": 5570
+  },
+  "merges": {
+    "demography": {
+      "both": 5570,
+      "left_only": 0,
+      "right_only": 0
+    },
+    "territorial": {
+      "both": 5570,
+      "left_only": 0,
+      "right_only": 0
+    }
+  },
+  "totals": {
+    "2010": {
+      "v01006": 190755799.0,
+      "v01031": 13768736.0,
+      "v01032": 14938953.0,
+      "v01033": 17131878.0,
+      "v01034": 16954675.0,
+      "v01035": 17196155.0,
+      "v01036": 17054966.0,
+      "v01037": 29557718.0,
+      "v01038": 24787075.0,
+      "v01039": 18377041.0,
+      "v01040": 11325225.0,
+      "v01041": 9218727.0
+    },
+    "2022": {
+      "v01006": 202561627.0,
+      "v01031": 12674640.0,
+      "v01032": 13722158.0,
+      "v01033": 13648699.0,
+      "v01034": 14341592.0,
+      "v01035": 15371116.0,
+      "v01036": 15347431.0,
+      "v01037": 31488578.0,
+      "v01038": 29631846.0,
+      "v01039": 24129286.0,
+      "v01040": 17789467.0,
+      "v01041": 14244668.0
+    }
+  },
+  "suppression": {
+    "municipalities2010": 1667,
+    "municipalities2022": 4846,
+    "inconsistent2010": 1666,
+    "inconsistent2022": 4774
+  },
+  "dynamism": {
+    "uniqueTypologyIds": 913,
+    "q25": -0.9245414733886719,
+    "q75": 1.5449442863464355,
+    "counts": {
+      "Médio Dinamismo": 455,
+      "Baixo Dinamismo": 229,
+      "Alto Dinamismo": 229
+    },
+    "comparableIds": 685,
+    "matchingIds": 684,
+    "comparableMunicipalities": 3864,
+    "matchingMunicipalities": 3863,
+    "mismatches": [
+      {
+        "Código Município": "2310209",
+        "Município": "Paracuru",
+        "ID Tipologia": "2310209",
+        "Região Geográfica Imediata": "Fortaleza",
+        "Tipologia PNDR III Nacional FINAL": "Média Renda e Médio Dinamismo",
+        "Taxa de variação do PIB per capita (2009-2021)": -0.9245414733886719,
+        "referenceDynamism": "Médio Dinamismo",
+        "dynamism": "Baixo Dinamismo"
+      }
+    ]
+  },
+  "limitations": [
+    "As bases anexas não separam 60–64 de 65–69 anos; o índice oficial 65+/0–14 não pode ser calculado.",
+    "O painel apresenta, de forma explícita, o índice alternativo 60+/0–14.",
+    "Os totais afetados por supressão correspondem à soma observada, não à recuperação de valores sigilosos."
+  ]
+}
