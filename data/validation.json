@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-18T23:56:57.197748+00:00",
+  "generatedAt": "2026-09-19T17:48:22.687615+00:00",
   "rows": {
     "census2010": 5570,
     "census2022": 5570,
@@ -63,26 +63,15 @@
     "q25": -0.9245414733886719,
     "q75": 1.5449442863464355,
     "counts": {
-      "Médio Dinamismo": 455,
-      "Baixo Dinamismo": 229,
-      "Alto Dinamismo": 229
+      "Médio Dinamismo": 456,
+      "Alto Dinamismo": 229,
+      "Baixo Dinamismo": 228
     },
     "comparableIds": 685,
-    "matchingIds": 684,
+    "matchingIds": 685,
     "comparableMunicipalities": 3864,
-    "matchingMunicipalities": 3863,
-    "mismatches": [
-      {
-        "Código Município": "2310209",
-        "Município": "Paracuru",
-        "ID Tipologia": "2310209",
-        "Região Geográfica Imediata": "Fortaleza",
-        "Tipologia PNDR III Nacional FINAL": "Média Renda e Médio Dinamismo",
-        "Taxa de variação do PIB per capita (2009-2021)": -0.9245414733886719,
-        "referenceDynamism": "Médio Dinamismo",
-        "dynamism": "Baixo Dinamismo"
-      }
-    ]
+    "matchingMunicipalities": 3864,
+    "mismatches": []
   },
   "limitations": [
     "As bases anexas não separam 60–64 de 65–69 anos; o índice oficial 65+/0–14 não pode ser calculado.",

@@ -31,6 +31,8 @@ import {
   Users,
 } from "lucide-react";
 
+import { buildMapClasses, mapClassColor } from "@/lib/map-classes";
+import { useMapZoom } from "@/lib/use-map-zoom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -277,29 +279,6 @@ function getMetric(row: Territory | Municipality, metric: MetricKey) {
   }
 }
 
-function hexToRgb(hex: string) {
-  const value = hex.replace("#", "");
-  return [0, 2, 4].map((start) => parseInt(value.slice(start, start + 2), 16));
-}
-
-function blend(a: string, b: string, t: number) {
-  const aa = hexToRgb(a);
-  const bb = hexToRgb(b);
-  const parts = aa.map((value, index) => Math.round(value + (bb[index] - value) * t));
-  return `rgb(${parts.join(",")})`;
-}
-
-function colorFor(value: number | null, metric: MetricKey, min: number, max: number) {
-  if (value === null || !Number.isFinite(value)) return "#d7dee3";
-  const diverging = ["popAbsolute", "popPct", "agingPct", "olderSharePp"].includes(metric);
-  if (diverging) {
-    if (value < 0) return blend("#f3edf0", "#9d4258", Math.min(1, value / Math.min(min, -0.0001)));
-    return blend("#f2f3ef", "#087c68", Math.min(1, value / Math.max(max, 0.0001)));
-  }
-  const t = (value - min) / Math.max(max - min, 0.0001);
-  return blend("#e6f1ef", "#075d55", Math.max(0, Math.min(1, t)));
-}
-
 function Kpi({ label, value, note, tone = "neutral" }: { label: string; value: string; note: string; tone?: string }) {
   return (
     <Card className={`kpi-card kpi-${tone}`}>
@@ -356,6 +335,7 @@ function MapPanel({
   onSelect: (code: string) => void;
 }) {
   const holder = useRef<HTMLDivElement>(null);
+  const viewport = useMapZoom();
   const [width, setWidth] = useState(900);
   const [hover, setHover] = useState<{ row: Territory; x: number; y: number } | null>(null);
 
@@ -385,13 +365,14 @@ function MapPanel({
     return geoPath(projection);
   }, [collection, features.length, height, width]);
   const values = territories.map((row) => getMetric(row, metric)).filter((value): value is number => value !== null && Number.isFinite(value));
-  const min = values.length ? Math.min(...values) : 0;
-  const max = values.length ? Math.max(...values) : 1;
+  const classes = buildMapClasses(values, ["popAbsolute","popPct","agingPct","olderSharePp"].includes(metric));
 
   return (
     <div className="map-wrap" ref={holder}>
-      <svg className="territorial-map" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Mapa de ${metricLabels[metric]}`}>
+      <div className="map-controls"><button onClick={()=>viewport.zoom(1.5)} aria-label="Ampliar mapa">+</button><button onClick={()=>viewport.zoom(1/1.5)} aria-label="Reduzir mapa">−</button><button onClick={viewport.reset}>Reenquadrar</button><span>Arraste para mover · role ou use dois dedos para ampliar</span></div>
+      <svg ref={viewport.svg} style={{touchAction:"none",cursor:"grab"}} className="territorial-map" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Mapa de ${metricLabels[metric]}`}>
         <rect width={width} height={height} fill="#eaf0f1" />
+        <g ref={viewport.group}>
         {path &&
           features.map((shape, index) => {
             const code = level === "municipality" ? String(shape.properties.codarea) : String(shape.properties.code);
@@ -402,9 +383,10 @@ function MapPanel({
               <path
                 key={`${code}-${index}`}
                 d={d}
-                fill={row ? colorFor(value, metric, min, max) : "#cfd8dd"}
+                fill={row ? mapClassColor(value, classes) : "#cfd8dd"}
                 fillOpacity={row ? 1 : 0.25}
                 stroke={selectedCode === code ? "#0c263b" : "#ffffff"}
+                vectorEffect="non-scaling-stroke"
                 strokeWidth={selectedCode === code ? 1.8 : level === "municipality" ? 0.16 : 0.55}
                 className={row ? "map-shape" : "map-shape muted-shape"}
                 onMouseMove={(event) => {
@@ -413,10 +395,11 @@ function MapPanel({
                   setHover({ row, x: event.clientX - rect.left, y: event.clientY - rect.top });
                 }}
                 onMouseLeave={() => setHover(null)}
-                onClick={() => row && onSelect(code)}
+                onClick={() => row && !viewport.dragged.current && onSelect(code)}
               />
             );
           })}
+        </g>
       </svg>
       {hover && (
         <div className="map-tooltip" style={{ left: Math.min(hover.x + 12, width - 245), top: hover.y + 10 }}>
@@ -426,11 +409,7 @@ function MapPanel({
           <small>{hover.row.dynamism}</small>
         </div>
       )}
-      <div className="map-legend">
-        <span>{metric === "pop2022" ? compactNumber.format(min) : fmt(min)}</span>
-        <i style={{background: `linear-gradient(to right, ${Array.from({length:21},(_,i) => `${colorFor(min+(max-min)*i/20, metric, min, max)} ${i*5}%`).join(", ")})`}} />
-        <span>{metric === "pop2022" ? compactNumber.format(max) : fmt(max)}</span>
-      </div>
+      <div className="percentile-legend"><strong>{classes.mode}</strong><span>Limites do recorte atual · {metricLabels[metric]}</span><div>{classes.classes.map((c,i)=><div className="legend-class" key={i}><i style={{background:c.color}}/><span>{c.label}</span><small>{c.count} territórios</small></div>)}{classes.separateZero&&<div className="legend-class"><i style={{background:"#fafafa"}}/><span>0 (neutro)</span><small>{classes.zeros} territórios</small></div>}</div></div>
     </div>
   );
 }
@@ -671,12 +650,12 @@ export default function Dashboard() {
             <span>Nível de análise</span>
             <select value={level} onChange={(event) => { setLevel(event.target.value as "municipality" | "rgi"); setMunicipalityFilter(""); setSelectedCode(""); }}>
               <option value="municipality">Município</option>
-              <option value="rgi">Região Geográfica Intermediária</option>
+              <option value="rgi">Região Geográfica Imediata</option>
             </select>
           </label>
           <FilterSelect label="Macrorregião" value={regionFilter} onChange={(value) => { setRegionFilter(value); setUfFilter(""); setRgiFilter(""); setMunicipalityFilter(""); }} options={regionOptions} />
           <FilterSelect label="Unidade da Federação" value={ufFilter} onChange={(value) => { setUfFilter(value); setRgiFilter(""); setMunicipalityFilter(""); }} options={ufOptions} />
-          <FilterSelect label="Região Geográfica Intermediária" value={rgiFilter} onChange={(value) => { setRgiFilter(value); setMunicipalityFilter(""); }} options={rgiOptions} />
+          <FilterSelect label="Região Geográfica Imediata" value={rgiFilter} onChange={(value) => { setRgiFilter(value); setMunicipalityFilter(""); }} options={rgiOptions} />
           {level === "municipality" && <FilterSelect label="Município" value={municipalityFilter} onChange={setMunicipalityFilter} options={municipalityOptions} />}
           <div className="filter-rule" />
           <FilterSelect label="Tipologia PNDR III" value={typologyFilter} onChange={setTypologyFilter} options={typologyOptions} />
@@ -686,8 +665,6 @@ export default function Dashboard() {
             <strong>{integerNumber.format(territories.length)} {level === "municipality" ? "municípios" : "RGI"}</strong>
             <small>{integerNumber.format(filteredMunicipalities.length)} municípios na agregação</small>
           </div>
-          <div className="method-alert"><AlertTriangle /><p>Somas observadas: há supressões em 1.667 municípios (2010) e 4.846 (2022). Faixas etárias podem não somar o total. As omissões não foram estimadas.</p></div>
-          <div className="method-alert"><Info /><p>O índice disponível é a medida alternativa <b>60+/0–14</b>. A faixa 65+ não é identificável nos arquivos anexos.</p></div>
         </aside>
 
         <Tabs defaultValue="panorama" className="workspace">
@@ -718,7 +695,7 @@ export default function Dashboard() {
                   </div>
                   <div className="analysis-grid">
                     <Card className="panel span-two"><CardContent className="p-0"><div className="panel-head"><div><h3>Estrutura etária</h3><p>População por faixa etária nos dois censos</p></div></div><div className="chart-height"><ResponsiveContainer width="100%" height="100%"><BarChart data={ageChart} margin={{ top: 12, right: 10, left: 5, bottom: 46 }}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="faixa" interval={0} angle={-35} textAnchor="end" height={70} tick={{ fontSize: 11 }} /><YAxis tickFormatter={(value) => compactNumber.format(value)} tick={{ fontSize: 11 }} /><ChartTooltip formatter={(value) => integerNumber.format(Number(value))} /><Legend /><Bar dataKey="2010" fill="#9cafb7" radius={[3, 3, 0, 0]} /><Bar dataKey="2022" fill="#147d68" radius={[3, 3, 0, 0]} /></BarChart></ResponsiveContainer></div></CardContent></Card>
-                    <Card className="panel profile-card"><CardContent className="p-0"><p className="eyebrow">PERFIL TERRITORIAL</p><h3>{currentSummary.typology}</h3><dl><div><dt>Dinamismo isolado</dt><dd>{currentSummary.dynamism}</dd></div><div><dt>RGI</dt><dd>{currentSummary.rgi || "Recorte agregado"}</dd></div><div><dt>Supressão</dt><dd>{currentSummary.quality.suppression2010 || currentSummary.quality.suppression2022 ? "Há células suprimidas" : "Sem ocorrência registrada"}</dd></div></dl></CardContent></Card>
+                    <Card className="panel profile-card"><CardContent className="p-0"><p className="eyebrow">PERFIL TERRITORIAL</p><h3>{currentSummary.typology}</h3><dl><div><dt>Dinamismo isolado</dt><dd>{currentSummary.dynamism}</dd></div><div><dt>RGI</dt><dd>{currentSummary.rgi || "Recorte agregado"}</dd></div></dl></CardContent></Card>
                   </div>
                 </>
               ) : <div className="empty-state">Nenhum território atende ao conjunto de filtros.</div>}
@@ -730,14 +707,14 @@ export default function Dashboard() {
             </TabsContent>
 
             <TabsContent value="dispersao">
-              <div className="section-head"><div><p className="eyebrow dark">DINÂMICA E ENVELHECIMENTO</p><h2>Dispersão territorial</h2><p>Cada ponto representa {level === "municipality" ? "um município" : "uma Região Geográfica Intermediária"}. O tamanho acompanha a população de 2022.</p></div></div>
+              <div className="section-head"><div><p className="eyebrow dark">DINÂMICA E ENVELHECIMENTO</p><h2>Dispersão territorial</h2><p>Cada ponto representa {level === "municipality" ? "um município" : "uma Região Geográfica Imediata"}. O tamanho acompanha a população de 2022.</p></div></div>
               <Card className="panel"><CardContent className="p-0"><div className="scatter-legend">{Object.entries(dynamismColors).map(([label, color]) => <span key={label}><i style={{ background: color }} />{label}</span>)}</div><div className="scatter-height"><ResponsiveContainer width="100%" height="100%"><ScatterChart margin={{ top: 15, right: 20, bottom: 30, left: 15 }}><CartesianGrid strokeDasharray="4 4" /><XAxis type="number" dataKey="x" name="Variação populacional" unit="%" tick={{ fontSize: 11 }} label={{ value: "Variação da população 2010–2022 (%)", position: "insideBottom", offset: -18 }} /><YAxis type="number" dataKey="y" name="Variação do índice" unit="%" tick={{ fontSize: 11 }} label={{ value: "Variação do índice 60+/0–14 (%)", angle: -90, position: "insideLeft" }} /><ZAxis type="number" dataKey="z" range={[22, 210]} /><ChartTooltip cursor={{ strokeDasharray: "3 3" }} content={({ active, payload }) => active && payload?.[0] ? <div className="chart-tooltip"><strong>{payload[0].payload.name}</strong><span>{payload[0].payload.uf} · {payload[0].payload.dynamism}</span><b>População: {fmt(payload[0].payload.x, "%")}</b><b>Envelhecimento: {fmt(payload[0].payload.y, "%")}</b></div> : null} />{scatterGroups.map((group) => <Scatter key={group.name} name={group.name} data={group.data} fill={dynamismColors[group.name]} fillOpacity={0.64} />)}</ScatterChart></ResponsiveContainer></div></CardContent></Card>
               <div className="rank-grid"><Card className="panel"><CardContent className="p-0"><h3>Maiores retrações populacionais</h3>{[...territories].sort((a, b) => (a.change.popPct ?? 0) - (b.change.popPct ?? 0)).slice(0, 8).map((row, index) => <div className="rank-row" key={row.code}><b>{index + 1}</b><span><strong>{row.name}</strong><small>{row.uf} · {row.dynamism}</small></span><em>{pct(row.change.popPct)}</em></div>)}</CardContent></Card><Card className="panel"><CardContent className="p-0"><h3>Maior avanço do índice 60+/0–14</h3>{[...territories].sort((a, b) => (b.change.aging60Pct ?? 0) - (a.change.aging60Pct ?? 0)).slice(0, 8).map((row, index) => <div className="rank-row" key={row.code}><b>{index + 1}</b><span><strong>{row.name}</strong><small>{row.uf} · {row.dynamism}</small></span><em>{pct(row.change.aging60Pct)}</em></div>)}</CardContent></Card></div>
             </TabsContent>
 
             <TabsContent value="agregados">
               <div className="section-head"><div><p className="eyebrow dark">ESCALAS DE AGREGAÇÃO</p><h2>Estados, macrorregiões e Brasil</h2><p>Numeradores e denominadores são somados antes do cálculo dos indicadores.</p></div><label className="metric-select"><span>Agregação</span><select value={aggregateLevel} onChange={(event) => setAggregateLevel(event.target.value as "uf" | "region" | "brasil")}><option value="uf">Unidades da Federação</option><option value="region">Macrorregiões</option><option value="brasil">Brasil</option></select></label></div>
-              <div className="aggregate-grid">{aggregateTerritories.map((row) => <Card className="aggregate-card" key={row.code}><CardContent className="p-0"><span>{row.name}</span><strong>{compactNumber.format(row.y2022.pop)}</strong><small>População em 2022</small><div><b className={(row.change.popPct ?? 0) < 0 ? "negative" : "positive"}>{pct(row.change.popPct)}</b><em>população</em></div><div><b>{fmt(row.y2022.aging60)}</b><em>índice 60+/0–14</em></div><div><b>{fmt(row.y2022.olderShare, "%")}</b><em>pessoas 60+</em></div></CardContent></Card>)}</div>
+              <div className="aggregate-grid">{aggregateTerritories.map((row) => <Card className="aggregate-card" key={row.code}><CardContent className="p-0"><span>{row.name}</span><strong>{compactNumber.format(row.y2022.pop)}</strong><small>População em 2022</small><div><b className={(row.change.popPct ?? 0) < 0 ? "negative" : "positive"}>{pct(row.change.popPct)}</b><em>população</em></div><div><b>{fmt(row.y2022.aging60)}</b><em>índice 60+/0–14</em></div><div><b>{fmt(row.y2022.olderShare, "%")}</b><em>pessoas 60+</em></div><div><b>{pct(row.change.aging60Pct)}</b><em>var. índice 60+/0–14</em></div><div><b>{fmt(row.change.olderSharePp," p.p.")}</b><em>var. participação 60+</em></div><div><b>{pct(row.y2010.older60 ? 100*(row.y2022.older60/row.y2010.older60-1) : null)}</b><em>var. população 60+</em></div><div><b>{integerNumber.format(row.y2022.older60-row.y2010.older60)}</b><em>var. absoluta 60+ (pessoas)</em></div></CardContent></Card>)}</div>
               <Card className="panel"><CardContent className="p-0"><h3>Comparação completa por faixa etária</h3><p>Abra um território para comparar os censos. Percentuais e índices são recalculados a partir das somas do recorte.</p>{aggregateTerritories.map((row) => <details key={row.code}><summary>{row.name} · 2010: {integerNumber.format(row.y2010.pop)} · 2022: {integerNumber.format(row.y2022.pop)}</summary><p>Variação populacional: {integerNumber.format(row.change.pop)} pessoas ({pct(row.change.popPct)}). Índice 60+/0–14: {fmt(row.y2010.aging60)} → {fmt(row.y2022.aging60)}; variação {pct(row.change.aging60Pct)}.</p><div className="table-wrap"><table><thead><tr><th>Faixa etária</th><th>2010</th><th>% 2010</th><th>2022</th><th>% 2022</th><th>Variação absoluta</th><th>Variação %</th></tr></thead><tbody>{data.meta.ageLabels.map((label,i) => <tr key={label}><td>{label}</td><td>{integerNumber.format(row.y2010.ages[i])}</td><td>{fmt(row.y2010.pop ? 100*row.y2010.ages[i]/row.y2010.pop : null,"%")}</td><td>{integerNumber.format(row.y2022.ages[i])}</td><td>{fmt(row.y2022.pop ? 100*row.y2022.ages[i]/row.y2022.pop : null,"%")}</td><td>{integerNumber.format(row.y2022.ages[i]-row.y2010.ages[i])}</td><td>{pct(row.y2010.ages[i] ? 100*(row.y2022.ages[i]/row.y2010.ages[i]-1) : null)}</td></tr>)}</tbody></table></div></details>)}</CardContent></Card>
               <Card className="panel"><CardContent className="p-0"><h3>Variação populacional por território agregado</h3><div className="aggregate-chart"><ResponsiveContainer width="100%" height="100%"><BarChart data={aggregateTerritories.slice(0, 27).map((row) => ({ name: row.name, variacao: row.change.popPct }))} layout="vertical" margin={{ left: 40, right: 28 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} /><XAxis type="number" unit="%" /><YAxis dataKey="name" type="category" width={105} tick={{ fontSize: 11 }} /><ChartTooltip formatter={(value) => fmt(Number(value), "%")} /><Bar dataKey="variacao" fill="#147d68" radius={[0, 4, 4, 0]} /></BarChart></ResponsiveContainer></div></CardContent></Card>
             </TabsContent>
@@ -745,15 +722,18 @@ export default function Dashboard() {
             <TabsContent value="tabela">
               <div className="section-head"><div><p className="eyebrow dark">BASE ANALÍTICA</p><h2>Tabela e download</h2><p>Resultados calculados para o recorte e o nível territorial selecionados.</p></div><Button onClick={downloadCsv}><Download /> Baixar CSV</Button></div>
               <div className="table-tools"><label><Search /><input type="search" value={tableSearch} onChange={(event) => setTableSearch(event.target.value)} placeholder="Buscar território, tipologia ou código" /></label><span>{integerNumber.format(tableRows.length)} registros</span></div>
-              <div className="table-wrap"><table><thead><tr><th>Território</th><th>UF</th><th>Tipologia</th><th>Dinamismo</th><th>Pop. 2010</th><th>Pop. 2022</th><th>Var. população</th><th>Índice 2022</th><th>Var. índice</th><th>Idosos 2022</th><th>Qualidade</th></tr></thead><tbody>{tableRows.slice(0, 500).map((row) => <tr key={row.code} onClick={() => setSelectedCode(row.code)}><td><strong>{row.name}</strong><small>{row.code} · {row.rgi}</small></td><td>{row.uf}</td><td>{row.typology}</td><td><span className="dynamism-pill" style={{ borderColor: dynamismColors[row.dynamism], color: dynamismColors[row.dynamism] }}>{row.dynamism}</span></td><td>{integerNumber.format(row.y2010.pop)}</td><td>{integerNumber.format(row.y2022.pop)}</td><td className={(row.change.popPct ?? 0) < 0 ? "negative" : "positive"}>{pct(row.change.popPct)}</td><td>{fmt(row.y2022.aging60)}</td><td>{pct(row.change.aging60Pct)}</td><td>{fmt(row.y2022.olderShare, "%")}</td><td>{row.quality.suppression2010 || row.quality.suppression2022 ? <span className="quality-warn">Atenção</span> : <span className="quality-ok">Regular</span>}</td></tr>)}</tbody></table></div>{tableRows.length > 500 && <p className="table-note">A visualização mostra os primeiros 500 registros. O download inclui todos os {integerNumber.format(tableRows.length)} territórios.</p>}
+              <div className="table-wrap"><table><thead><tr><th>Território</th><th>UF</th><th>Tipologia</th><th>Dinamismo</th><th>Pop. 2010</th><th>Pop. 2022</th><th>Var. população</th><th>Índice 2022</th><th>Var. índice</th><th>Idosos 2022</th></tr></thead><tbody>{tableRows.slice(0, 500).map((row) => <tr key={row.code} onClick={() => setSelectedCode(row.code)}><td><strong>{row.name}</strong><small>{row.code} · {row.rgi}</small></td><td>{row.uf}</td><td>{row.typology}</td><td><span className="dynamism-pill" style={{ borderColor: dynamismColors[row.dynamism], color: dynamismColors[row.dynamism] }}>{row.dynamism}</span></td><td>{integerNumber.format(row.y2010.pop)}</td><td>{integerNumber.format(row.y2022.pop)}</td><td className={(row.change.popPct ?? 0) < 0 ? "negative" : "positive"}>{pct(row.change.popPct)}</td><td>{fmt(row.y2022.aging60)}</td><td>{pct(row.change.aging60Pct)}</td><td>{fmt(row.y2022.olderShare, "%")}</td></tr>)}</tbody></table></div>{tableRows.length > 500 && <p className="table-note">A visualização mostra os primeiros 500 registros. O download inclui todos os {integerNumber.format(tableRows.length)} territórios.</p>}
             </TabsContent>
 
             <TabsContent value="metodologia">
+          <div className="method-alert"><AlertTriangle /><p>Somas observadas: há supressões em 1.667 municípios (2010) e 4.846 (2022). Faixas etárias podem não somar o total. As omissões não foram estimadas.</p></div>
+          <div className="method-alert"><Info /><p>O índice disponível é a medida alternativa <b>60+/0–14</b>. A faixa 65+ não é identificável nos arquivos anexos.</p></div>
               <div className="section-head"><div><p className="eyebrow dark">TRANSPARÊNCIA METODOLÓGICA</p><h2>Metodologia e dados</h2><p>Definições, compatibilização territorial, classificação e controles de qualidade.</p></div></div>
               <div className="method-grid"><Card className="method-step"><CardContent className="p-0"><b>01</b><h3>Malha comum</h3><p>Os resultados de 2010 foram reexpressos nos limites municipais de 2022; os de 2022 foram somados diretamente por município.</p></CardContent></Card><Card className="method-step"><CardContent className="p-0"><b>02</b><h3>Agregação</h3><p>RGI, estados, macrorregiões e Brasil são obtidos pela soma dos componentes, antes do cálculo de percentuais e índices.</p></CardContent></Card><Card className="method-step"><CardContent className="p-0"><b>03</b><h3>Dinamismo</h3><p>Os quartis são calculados sobre {validation.dynamism.uniqueTypologyIds} IDs Tipologia únicos e propagados aos municípios.</p></CardContent></Card><Card className="method-step"><CardContent className="p-0"><b>04</b><h3>Auditoria</h3><p>Supressões, inconsistências e setores rateados permanecem identificados, com até seis casas decimais nos arquivos de intercâmbio.</p></CardContent></Card></div>
+              <p>Nos mapas, as classes são definidas por decis no recorte. Quando há valores negativos e positivos, são cinco classes por sinal; com menos de 20 negativos, usa-se uma classe negativa e nove positivas. Zero é neutro. Sem valores positivos, os negativos são divididos em decis. Limites coincidentes são reunidos para manter valores iguais na mesma classe. Assim, recortes pequenos ou com muitos valores iguais podem ter menos classes.</p>
               <div className="formula-grid"><Card className="formula-card"><CardContent className="p-0"><span>Variação populacional</span><code>100 × (População 2022 / População 2010 − 1)</code><p>Variação relativa entre os dois censos.</p></CardContent></Card><Card className="formula-card warning"><CardContent className="p-0"><span>Índice disponível</span><code>100 × (População 60+ / População 0–14)</code><p>Medida alternativa, porque a faixa 60–69 não permite isolar a população de 65 anos ou mais.</p></CardContent></Card><Card className="formula-card"><CardContent className="p-0"><span>Participação de idosos</span><code>100 × (População 60+ / População total)</code><p>A diferença temporal é expressa em pontos percentuais.</p></CardContent></Card></div>
-              <Card className="panel prose"><CardContent className="p-0"><h3>Compatibilização 2010 → 2022</h3><p>O histórico de formação dos setores conecta cada setor de 2022 aos seus antecedentes de 2010. Pares duplicados foram removidos. Quando um setor de 2010 alcança apenas um município de 2022, seus moradores são integralmente atribuídos a ele. Nos casos em que alcança mais de um município, os valores são rateados segundo a população de 2022 dos setores descendentes; se essa massa é zero ou ausente, utiliza-se a proporção da contagem de setores descendentes.</p><p>Valores fracionários resultantes do rateio são preservados. Células suprimidas contribuem com zero somente na soma observada, sem tentativa de recuperar conteúdo protegido.</p><h3>Classificação isolada de dinamismo</h3><p>Os pontos de corte são {decimalNumber.format(validation.dynamism.q25)} e {decimalNumber.format(validation.dynamism.q75)}. A classificação resultou em {validation.dynamism.counts["Baixo Dinamismo"]} IDs de Baixo, {validation.dynamism.counts["Médio Dinamismo"]} de Médio e {validation.dynamism.counts["Alto Dinamismo"]} de Alto Dinamismo. Entre os territórios comparáveis, houve correspondência em {validation.dynamism.matchingIds}/{validation.dynamism.comparableIds} IDs e {validation.dynamism.matchingMunicipalities}/{validation.dynamism.comparableMunicipalities} municípios. A divergência em Paracuru (CE) está no limite inclusivo do percentil 25. Empates nos cortes permanecem na mesma classe; por isso, os grupos extremos aproximam 25% dos IDs. Os filtros PNDR e dinamismo selecionam municípios antes da agregação: uma RGI filtrada pode representar apenas parte de seus municípios.</p></CardContent></Card>
-              <div className="qa-grid"><span><b>{validation.uniqueMunicipalities.census2010}</b>municípios em 2010</span><span><b>{validation.uniqueMunicipalities.census2022}</b>municípios em 2022</span><span><b>{validation.dynamism.uniqueTypologyIds}</b>IDs Tipologia</span><span><b>{validation.dynamism.mismatches.length}</b>divergência de dinamismo</span></div>
+              <Card className="panel prose"><CardContent className="p-0"><h3>Compatibilização 2010 → 2022</h3><p>O histórico de formação dos setores conecta cada setor de 2022 aos seus antecedentes de 2010. Pares duplicados foram removidos. Quando um setor de 2010 alcança apenas um município de 2022, seus moradores são integralmente atribuídos a ele. Nos casos em que alcança mais de um município, os valores são rateados segundo a população de 2022 dos setores descendentes; se essa massa é zero ou ausente, utiliza-se a proporção da contagem de setores descendentes.</p><p>Valores fracionários resultantes do rateio são preservados. Células suprimidas contribuem com zero somente na soma observada, sem tentativa de recuperar conteúdo protegido.</p><h3>Classificação isolada de dinamismo</h3><p>Os pontos de corte são {decimalNumber.format(validation.dynamism.q25)} e {decimalNumber.format(validation.dynamism.q75)}. A classificação resultou em {validation.dynamism.counts["Baixo Dinamismo"]} IDs de Baixo, {validation.dynamism.counts["Médio Dinamismo"]} de Médio e {validation.dynamism.counts["Alto Dinamismo"]} de Alto Dinamismo. Os filtros PNDR e dinamismo selecionam municípios antes da agregação: uma RGI filtrada pode representar apenas parte de seus municípios.</p></CardContent></Card>
+              <div className="qa-grid"><span><b>{validation.uniqueMunicipalities.census2010}</b>municípios em 2010</span><span><b>{validation.uniqueMunicipalities.census2022}</b>municípios em 2022</span><span><b>{validation.dynamism.uniqueTypologyIds}</b>IDs Tipologia</span></div>
             </TabsContent>
           </div>
         </Tabs>
