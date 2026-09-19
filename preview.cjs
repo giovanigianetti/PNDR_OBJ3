@@ -1,0 +1,3 @@
+const http=require('http'),fs=require('fs'),path=require('path');
+const root=__dirname;
+http.createServer((req,res)=>{let u=decodeURIComponent(req.url.split('?')[0]);u=u.replace(/^\/PNDR_OBJ3\//,'/');let p=path.join(root,u);if(!p.startsWith(root)){res.writeHead(403);return res.end();}try{if(fs.statSync(p).isDirectory())p=path.join(p,'index.html');const ext=path.extname(p);res.setHeader('Content-Type',({'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json'})[ext]||'application/octet-stream');fs.createReadStream(p).pipe(res);}catch{res.writeHead(404);res.end('Not found');}}).listen(4173,'0.0.0.0');

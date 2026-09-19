@@ -1,0 +1,19 @@
+{
+  "municipalities": 5570,
+  "intermediate_regions": 133,
+  "years": {
+    "2010": {
+      "population_observed": 190755798.999983,
+      "age_sum_differs_from_total_municipalities": 1666,
+      "suppressed_cells": 69674,
+      "municipalities_suppressed": 1667
+    },
+    "2022": {
+      "population_observed": 202561627.0,
+      "age_sum_differs_from_total_municipalities": 4774,
+      "suppressed_cells": 215615,
+      "municipalities_suppressed": 4846
+    }
+  },
+  "status": "PASS"
+}
