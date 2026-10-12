@@ -1,0 +1,16 @@
+{
+  "version": "3.2.0",
+  "checks": "PASS",
+  "panorama": "Emigrantes somente",
+  "aggregateCards": "Indicadores integrados aos cards demográficos",
+  "rates": "Por 1000 habitantes de 5 anos ou mais; agregado com suporte comum do numerador e denominador",
+  "efficacy": "Média aritmética territorial; percentagem",
+  "balanceIndicator": "Contagem de municípios com emigração maior que imigração",
+  "national2022": {
+    "municipalities": 5570,
+    "rateDenominatorAvailable": 5565,
+    "negativeBalanceMunicipalities": 2340
+  },
+  "retainedRegions": 508,
+  "noImputation": true
+}

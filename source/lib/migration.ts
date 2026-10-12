@@ -1,8 +1,8 @@
-export const migrationNames = {tx_imigracao:'Taxa de imigração',tx_emigracao:'Taxa de emigração',tx_saldo:'Taxa de saldo migratório',tx_volume:'Taxa de volume migratório',eficacia:'Eficácia migratória'};
+export const migrationNames = {tx_imigracao:'Taxa de imigração',tx_emigracao:'Taxa de emigração',negativeMunicipalities:'Municípios com emigração > imigração',eficacia:'Eficácia migratória'};
 export type MigrationVariable = keyof typeof migrationNames;
 export type MigrationKey = `${MigrationVariable}_${2010|2022}`;
-export const migrationLabels = Object.fromEntries([2010,2022].flatMap(y=>Object.entries(migrationNames).map(([k,v])=>[`${k}_${y}`,`${v} · ${y} (${k==='eficacia'?'%':'‰'})`]))) as Record<MigrationKey,string>;
-export type MigrationMetrics = {pop:number|null; immigrants:number; emigrants:number; balance:number; volume:number; tx_imigracao:number|null;tx_emigracao:number|null;tx_saldo:number|null;tx_volume:number|null;eficacia:number|null;coverage:number};
+export const migrationLabels = Object.fromEntries([2010,2022].flatMap(y=>Object.entries(migrationNames).map(([k,v])=>[`${k}_${y}`,`${v} · ${y} (${k==='eficacia'?'%':k==='negativeMunicipalities'?'municípios':'‰'})`]))) as Record<MigrationKey,string>;
+export type MigrationMetrics = {pop:number|null; immigrants:number; emigrants:number; balance:number; volume:number; tx_imigracao:number|null;tx_emigracao:number|null;tx_saldo:number|null;tx_volume:number|null;eficacia:number|null;coverage:number;rateCoverage:number;ratePop:number;rateImmigrants:number;rateEmigrants:number;negativeMunicipalities:number};
 export type MigrationIndicators = {years:Record<string,Record<string,(number|null)[]>>; types:string[];regions:string[]};
 export type ProfileData = {columns:string[];rows:(number|null)[][]};
 export type MigrationFilters = {role:string;type:string;region:string};
@@ -12,11 +12,22 @@ export const profileLabels = ['Migrantes','Renda média','Idade média','Mulhere
 export function matchesProfile(r:(number|null)[], f:MigrationFilters) {return (!f.role||String(r[1])===f.role)&&(!f.type||String(r[2])===f.type)&&(!f.region||String(r[3])===f.region);}
 export function deriveMigration(pop:number|null,i:number,e:number,coverage=1):MigrationMetrics {
  const balance=Math.abs(i-e)<1e-6?0:i-e,volume=i+e;
- return {pop,immigrants:i,emigrants:e,balance,volume,coverage,tx_imigracao:pop?1000*i/pop:null,tx_emigracao:pop?1000*e/pop:null,tx_saldo:pop?1000*balance/pop:null,tx_volume:pop?1000*volume/pop:null,eficacia:volume?100*balance/volume:null};
+ return {pop,immigrants:i,emigrants:e,balance,volume,coverage,rateCoverage:pop!==null&&pop>0?coverage:0,ratePop:pop||0,rateImmigrants:pop!==null&&pop>0?i:0,rateEmigrants:pop!==null&&pop>0?e:0,negativeMunicipalities:balance<0?1:0,tx_imigracao:pop?1000*i/pop:null,tx_emigracao:pop?1000*e/pop:null,tx_saldo:pop?1000*balance/pop:null,tx_volume:pop?1000*volume/pop:null,eficacia:volume?100*balance/volume:null};
 }
-export function sumMigration(rows:(MigrationMetrics|null|undefined)[]):MigrationMetrics|null {
+/** Rates use identical available-case support for numerator and denominator.
+ * Totals and municipality counts retain all observed records. */
+export function sumMigration(rows:(MigrationMetrics|null|undefined)[], efficacyMode:'mean'|'ratio'='mean'):MigrationMetrics|null {
  const valid=rows.filter((r):r is MigrationMetrics=>!!r);if(!valid.length)return null;
- return deriveMigration(valid.some(r=>r.pop===null)?null:valid.reduce((s,r)=>s+(r.pop||0),0),valid.reduce((s,r)=>s+r.immigrants,0),valid.reduce((s,r)=>s+r.emigrants,0),valid.reduce((s,r)=>s+r.coverage,0));
+ const sum=(key:keyof MigrationMetrics)=>valid.reduce((s,r)=>s+(r[key]||0),0);
+ const m=deriveMigration(sum('ratePop')||null,sum('immigrants'),sum('emigrants'),sum('coverage'));
+ m.rateCoverage=sum('rateCoverage');m.ratePop=sum('ratePop');m.rateImmigrants=sum('rateImmigrants');m.rateEmigrants=sum('rateEmigrants');
+ m.tx_imigracao=m.ratePop?1000*m.rateImmigrants/m.ratePop:null;
+ m.tx_emigracao=m.ratePop?1000*m.rateEmigrants/m.ratePop:null;
+ m.tx_saldo=m.ratePop?1000*(m.rateImmigrants-m.rateEmigrants)/m.ratePop:null;
+ m.tx_volume=m.ratePop?1000*(m.rateImmigrants+m.rateEmigrants)/m.ratePop:null;
+ m.negativeMunicipalities=sum('negativeMunicipalities');
+ if(efficacyMode==='mean'){const rates=valid.map(r=>r.eficacia).filter((x):x is number=>x!==null);m.eficacia=rates.length?rates.reduce((s,x)=>s+x,0)/rates.length:null;}
+ return m;
 }
 export function municipalMigration(ind:MigrationIndicators|null,profiles:ProfileData|null,year:number,f:MigrationFilters):Map<string,MigrationMetrics> {
  const out=new Map<string,MigrationMetrics>(); if(!ind)return out;

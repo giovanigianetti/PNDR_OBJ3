@@ -32,7 +32,7 @@ import {
 } from "lucide-react";
 
 import {loadJson,loadMigrationProfile} from "@/lib/load-data";
-import { MigrationPanorama, MigrationKpis, MigrationAggregates, MigrationMethodology } from "@/components/migration-panels";
+import { MigrationPanorama, MigrationKpis, MigrationAggregateRows, MigrationMethodology } from "@/components/migration-panels";
 import { migrationLabels, municipalMigration, sumMigration, emptyMigrationFilters, type MigrationKey, type MigrationMetrics, type MigrationIndicators, type ProfileData, type MigrationFilters } from "@/lib/migration";
 
 import { buildMapClasses, mapClassColor } from "@/lib/map-classes";
@@ -225,6 +225,7 @@ function deriveChange(y2010: YearMetrics, y2022: YearMetrics): ChangeMetrics {
 function aggregateMunicipalities(
   rows: Municipality[],
   identity: Partial<Municipality> & Pick<Municipality, "code" | "name">,
+  efficacyMode: "mean" | "ratio" = "mean",
 ): Territory {
   const ages2010 = Array(11).fill(0);
   const ages2022 = Array(11).fill(0);
@@ -252,8 +253,8 @@ function aggregateMunicipalities(
     y2010,
     y2022,
     change: deriveChange(y2010, y2022),
-    m2010: sumMigration(rows.map(r=>r.m2010)),
-    m2022: sumMigration(rows.map(r=>r.m2022)),
+    m2010: sumMigration(rows.map(r=>r.m2010),efficacyMode),
+    m2022: sumMigration(rows.map(r=>r.m2022),efficacyMode),
     municipalityCount: rows.length,
     quality: {
       suppression2010: rows.some((row) => row.quality.suppression2010) ? 1 : 0,
@@ -290,7 +291,7 @@ function getMetric(row: Territory | Municipality, metric: MetricKey) {
   return null;
 }
 
-function metricUnit(metric:MetricKey){return metric.startsWith("tx_")?"‰":metric==="olderSharePp"?" p.p.":["aging2010","aging2022"].includes(metric)?" por 100":["pop2022","popAbsolute"].includes(metric)?" pessoas":"%";}
+function metricUnit(metric:MetricKey){return metric.startsWith("negativeMunicipalities")?" municípios":metric.startsWith("tx_")?"‰":metric==="olderSharePp"?" p.p.":["aging2010","aging2022"].includes(metric)?" por 100":["pop2022","popAbsolute"].includes(metric)?" pessoas":"%";}
 
 function Kpi({ label, value, note, tone = "neutral" }: { label: string; value: string; note: string; tone?: string }) {
   return (
@@ -445,8 +446,10 @@ export default function Dashboard() {
     })).catch(e=>{if(!cancelled)setProfileError(String(e));});
     return()=>{cancelled=true};
   },[needProfiles,retryProfile]);
-  const migration2010=useMemo(()=>municipalMigration(migration,profiles[2010],2010,migrationFilters),[migration,profiles,migrationFilters]);
-  const migration2022=useMemo(()=>municipalMigration(migration,profiles[2022],2022,migrationFilters),[migration,profiles,migrationFilters]);
+  const summaryTab=["panorama","migracao","agregados"].includes(activeTab);
+  const metricFilters=useMemo(()=>({...migrationFilters,role:summaryTab?"":migrationFilters.role}),[migrationFilters,summaryTab]);
+  const migration2010=useMemo(()=>municipalMigration(migration,profiles[2010],2010,metricFilters),[migration,profiles,metricFilters]);
+  const migration2022=useMemo(()=>municipalMigration(migration,profiles[2022],2022,metricFilters),[migration,profiles,metricFilters]);
   const [data, setData] = useState<DashboardData | null>(null);
   const [validation, setValidation] = useState<Validation | null>(null);
   const [municipalityFeatures, setMunicipalityFeatures] = useState<GeoFeature[]>([]);
@@ -520,14 +523,15 @@ export default function Dashboard() {
         rgi: rows[0].rgi,
         uf: uniqueLabel(rows.map((row) => row.uf), "Mais de uma UF"),
         region: uniqueLabel(rows.map((row) => row.region), "Mais de uma macrorregião"),
-      }),
+      }, "ratio"),
     );
   }, [filteredMunicipalities, level]);
 
   const currentSummary = useMemo(() => {
     if (!filteredMunicipalities.length) return null;
     const selected = territories.find((row) => row.code === selectedCode);
-    return selected ?? aggregateMunicipalities(filteredMunicipalities, {
+    if(selected)return selected;
+    const summary=aggregateMunicipalities(filteredMunicipalities, {
       code: "filter",
       name: "Recorte atual",
       rgiCode: "",
@@ -536,7 +540,9 @@ export default function Dashboard() {
       uf: uniqueLabel(filteredMunicipalities.map((row) => row.uf), "Mais de uma UF"),
       region: uniqueLabel(filteredMunicipalities.map((row) => row.region), "Mais de uma macrorregião"),
     });
-  }, [filteredMunicipalities, selectedCode, territories]);
+    if(level==="rgi"){summary.m2010=sumMigration(territories.map(r=>r.m2010));summary.m2022=sumMigration(territories.map(r=>r.m2022));}
+    return summary;
+  }, [filteredMunicipalities, selectedCode, territories,level]);
 
   const regionOptions = useMemo(() => {
     if (!data) return [];
@@ -696,7 +702,7 @@ export default function Dashboard() {
           <FilterSelect label="Tipologia PNDR III" value={typologyFilter} onChange={setTypologyFilter} options={typologyOptions} />
           <FilterSelect label="Classe isolada de dinamismo" value={dynamismFilter} onChange={setDynamismFilter} options={Object.keys(dynamismColors).filter((v) => v !== "Múltiplas classes").map((value) => ({ value, label: value }))} />
           <div className="filter-rule" />
-          <FilterSelect label="Papel na migração" value={migrationFilters.role} onChange={role=>setMigrationFilters(f=>({...f,role}))} options={[{value:"0",label:"Imigrante"},{value:"1",label:"Emigrante"}]} />
+          {!summaryTab&&<FilterSelect label="Papel na migração" value={migrationFilters.role} onChange={role=>setMigrationFilters(f=>({...f,role}))} options={[{value:"0",label:"Imigrante"},{value:"1",label:"Emigrante"}]} />}
           <FilterSelect label="Tipo" value={migrationFilters.type} onChange={type=>setMigrationFilters(f=>({...f,type}))} options={(migration?.types||[]).map((label,i)=>({value:String(i),label}))} />
           <FilterSelect label="Tipo de migração" value={migrationFilters.type} onChange={type=>setMigrationFilters(f=>({...f,type}))} options={(migration?.types||[]).map((label,i)=>({value:String(i),label}))} />
           <FilterSelect label="Região da contraparte" value={migrationFilters.region} onChange={region=>setMigrationFilters(f=>({...f,region}))} options={(migration?.regions||[]).map((label,i)=>({value:String(i),label}))} />
@@ -721,7 +727,7 @@ export default function Dashboard() {
 
           <div className="content">
             {needProfiles&&(!profiles[2010]||!profiles[2022])&&<p role="status" className="migration-loading">{profileError?`Não foi possível carregar os perfis: ${profileError}`:"Carregando os perfis de migração…"}{profileError&&<button onClick={()=>setRetryProfile(v=>v+1)}>Tentar novamente</button>}</p>}
-            {migrationFilters.role&&<p className="migration-filter-note">Recorte de {migrationFilters.role==='0'?'imigração':'emigração'}: os saldos mostram a contribuição do papel selecionado. Selecione “Todos” para o saldo líquido completo.</p>}
+            {!summaryTab&&migrationFilters.role&&<p className="migration-filter-note">Recorte de {migrationFilters.role==='0'?'imigração':'emigração'}: os indicadores consideram apenas o papel selecionado. Para comparar entradas e saídas e interpretar a eficácia ou a contagem de municípios com saldo negativo, selecione “Todos”.</p>}
 
             <TabsContent value="panorama">
               <div className="section-head"><div><p className="eyebrow dark">SÍNTESE DO RECORTE</p><h2>{currentSummary?.name ?? "Sem territórios"}</h2><p>Comparação dos Censos Demográficos de 2010 e 2022 em limites municipais compatíveis.</p></div>{currentSummary && <span className="territory-badge">{currentSummary.dynamism}</span>}</div>
@@ -738,7 +744,7 @@ export default function Dashboard() {
                     <Kpi label="Idosos · 2022" value={fmt(currentSummary.y2022.olderShare, "%")} note="população com 60 anos ou mais" />
                     <Kpi label="Mudança na participação" value={fmt(currentSummary.change.olderSharePp, " p.p.")} note="diferença entre 2022 e 2010" tone="warning" />
                   </div>
-                  <MigrationKpis row={currentSummary} />
+                  <MigrationKpis row={currentSummary} level={level} />
                   <div className="analysis-grid">
                     <Card className="panel span-two"><CardContent className="p-0"><div className="panel-head"><div><h3>Estrutura etária</h3><p>População por faixa etária nos dois censos</p></div></div><div className="chart-height"><ResponsiveContainer width="100%" height="100%"><BarChart data={ageChart} margin={{ top: 12, right: 10, left: 5, bottom: 46 }}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="faixa" interval={0} angle={-35} textAnchor="end" height={70} tick={{ fontSize: 11 }} /><YAxis tickFormatter={(value) => compactNumber.format(value)} tick={{ fontSize: 11 }} /><ChartTooltip formatter={(value) => integerNumber.format(Number(value))} /><Legend /><Bar dataKey="2010" fill="#9cafb7" radius={[3, 3, 0, 0]} /><Bar dataKey="2022" fill="#147d68" radius={[3, 3, 0, 0]} /></BarChart></ResponsiveContainer></div></CardContent></Card>
                     <Card className="panel profile-card"><CardContent className="p-0"><p className="eyebrow">PERFIL TERRITORIAL</p><h3>{currentSummary.typology}</h3><dl><div><dt>Dinamismo isolado</dt><dd>{currentSummary.dynamism}</dd></div><div><dt>RGI</dt><dd>{currentSummary.rgi || "Recorte agregado"}</dd></div></dl></CardContent></Card>
@@ -763,9 +769,8 @@ export default function Dashboard() {
             </TabsContent>
 
             <TabsContent value="agregados">
-              <div className="section-head"><div><p className="eyebrow dark">ESCALAS DE AGREGAÇÃO</p><h2>Estados, macrorregiões e Brasil</h2><p>Numeradores e denominadores são somados antes do cálculo dos indicadores.</p></div><label className="metric-select"><span>Agregação</span><select value={aggregateLevel} onChange={(event) => setAggregateLevel(event.target.value as "uf" | "region" | "brasil")}><option value="uf">Unidades da Federação</option><option value="region">Macrorregiões</option><option value="brasil">Brasil</option></select></label></div>
-              <MigrationAggregates territories={aggregateTerritories} municipalities={filteredMunicipalities} level={aggregateLevel} profiles={profiles} indicators={migration} filters={migrationFilters} />
-              <div className="aggregate-grid">{aggregateTerritories.map((row) => <Card className="aggregate-card" key={row.code}><CardContent className="p-0"><span>{row.name}</span><strong>{compactNumber.format(row.y2022.pop)}</strong><small>População em 2022</small><div><b className={(row.change.popPct ?? 0) < 0 ? "negative" : "positive"}>{pct(row.change.popPct)}</b><em>população</em></div><div><b>{fmt(row.y2022.aging60)}</b><em>índice 60+/0–14</em></div><div><b>{fmt(row.y2022.olderShare, "%")}</b><em>pessoas 60+</em></div><div><b>{pct(row.change.aging60Pct)}</b><em>var. índice 60+/0–14</em></div><div><b>{fmt(row.change.olderSharePp," p.p.")}</b><em>var. participação 60+</em></div><div><b>{pct(row.y2010.older60 ? 100*(row.y2022.older60/row.y2010.older60-1) : null)}</b><em>var. população 60+</em></div><div><b>{integerNumber.format(row.y2022.older60-row.y2010.older60)}</b><em>var. absoluta 60+ (pessoas)</em></div></CardContent></Card>)}</div>
+              <div className="section-head"><div><p className="eyebrow dark">ESCALAS DE AGREGAÇÃO</p><h2>Estados, macrorregiões e Brasil</h2><p>Taxas por mil habitantes; eficácia média dos municípios; contagem de municípios com mais saídas que entradas.</p></div><label className="metric-select"><span>Agregação</span><select value={aggregateLevel} onChange={(event) => setAggregateLevel(event.target.value as "uf" | "region" | "brasil")}><option value="uf">Unidades da Federação</option><option value="region">Macrorregiões</option><option value="brasil">Brasil</option></select></label></div>
+              <div className="aggregate-grid">{aggregateTerritories.map((row) => <Card className="aggregate-card" key={row.code}><CardContent className="p-0"><span>{row.name}</span><strong>{compactNumber.format(row.y2022.pop)}</strong><small>População em 2022</small><div><b className={(row.change.popPct ?? 0) < 0 ? "negative" : "positive"}>{pct(row.change.popPct)}</b><em>população</em></div><div><b>{fmt(row.y2022.aging60)}</b><em>índice 60+/0–14</em></div><div><b>{fmt(row.y2022.olderShare, "%")}</b><em>pessoas 60+</em></div><div><b>{pct(row.change.aging60Pct)}</b><em>var. índice 60+/0–14</em></div><div><b>{fmt(row.change.olderSharePp," p.p.")}</b><em>var. participação 60+</em></div><div><b>{pct(row.y2010.older60 ? 100*(row.y2022.older60/row.y2010.older60-1) : null)}</b><em>var. população 60+</em></div><div><b>{integerNumber.format(row.y2022.older60-row.y2010.older60)}</b><em>var. absoluta 60+ (pessoas)</em></div><MigrationAggregateRows row={row} codes={new Set(filteredMunicipalities.filter(m=>aggregateLevel==='brasil'||(aggregateLevel==='uf'?m.ufCode:String(m.regionCode))===row.code).map(m=>m.code))} profiles={profiles} indicators={migration} filters={migrationFilters}/></CardContent></Card>)}</div>
               <Card className="panel"><CardContent className="p-0"><h3>Comparação completa por faixa etária</h3><p>Abra um território para comparar os censos. Percentuais e índices são recalculados a partir das somas do recorte.</p>{aggregateTerritories.map((row) => <details key={row.code}><summary>{row.name} · 2010: {integerNumber.format(row.y2010.pop)} · 2022: {integerNumber.format(row.y2022.pop)}</summary><p>Variação populacional: {integerNumber.format(row.change.pop)} pessoas ({pct(row.change.popPct)}). Índice 60+/0–14: {fmt(row.y2010.aging60)} → {fmt(row.y2022.aging60)}; variação {pct(row.change.aging60Pct)}.</p><div className="table-wrap"><table><thead><tr><th>Faixa etária</th><th>2010</th><th>% 2010</th><th>2022</th><th>% 2022</th><th>Variação absoluta</th><th>Variação %</th></tr></thead><tbody>{data.meta.ageLabels.map((label,i) => <tr key={label}><td>{label}</td><td>{integerNumber.format(row.y2010.ages[i])}</td><td>{fmt(row.y2010.pop ? 100*row.y2010.ages[i]/row.y2010.pop : null,"%")}</td><td>{integerNumber.format(row.y2022.ages[i])}</td><td>{fmt(row.y2022.pop ? 100*row.y2022.ages[i]/row.y2022.pop : null,"%")}</td><td>{integerNumber.format(row.y2022.ages[i]-row.y2010.ages[i])}</td><td>{pct(row.y2010.ages[i] ? 100*(row.y2022.ages[i]/row.y2010.ages[i]-1) : null)}</td></tr>)}</tbody></table></div></details>)}</CardContent></Card>
               <Card className="panel"><CardContent className="p-0"><h3>Variação populacional por território agregado</h3><div className="aggregate-chart"><ResponsiveContainer width="100%" height="100%"><BarChart data={aggregateTerritories.slice(0, 27).map((row) => ({ name: row.name, variacao: row.change.popPct }))} layout="vertical" margin={{ left: 40, right: 28 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} /><XAxis type="number" unit="%" /><YAxis dataKey="name" type="category" width={105} tick={{ fontSize: 11 }} /><ChartTooltip formatter={(value) => fmt(Number(value), "%")} /><Bar dataKey="variacao" fill="#147d68" radius={[0, 4, 4, 0]} /></BarChart></ResponsiveContainer></div></CardContent></Card>
             </TabsContent>

@@ -13,8 +13,8 @@ for(const year of [2010,2022]){
  const viaProfiles=m.municipalMigration(ind,profiles,year,{...m.emptyMigrationFilters,role:'0'});
  const emig=m.municipalMigration(ind,profiles,year,{...m.emptyMigrationFilters,role:'1'});
  for(const [code,v]of base){close(v.immigrants,viaProfiles.get(code).immigrants);close(v.emigrants,emig.get(code).emigrants);if(v.pop===null)assert.equal(v.tx_saldo,null);else close(v.tx_saldo,1000*v.balance/v.pop);}
- const total=m.sumMigration([...base.values()]);assert.equal(total.balance,0);assert.equal(total.eficacia,0);assert.equal(total.coverage,year===2010?5565:5570);
- if(year===2022){assert.equal(total.pop,null);assert.equal(total.tx_volume,null);assert.equal(base.get('1504752').eficacia,-100);assert.equal(base.get('1504752').tx_emigracao,null);}
+ const total=m.sumMigration([...base.values()]);assert.equal(total.balance,0);const efficacies=[...base.values()].map(r=>r.eficacia).filter(v=>v!==null);close(total.eficacia,efficacies.reduce((s,v)=>s+v,0)/efficacies.length);assert.equal(total.negativeMunicipalities,[...base.values()].filter(r=>r.emigrants>r.immigrants).length);assert.equal(total.coverage,year===2010?5565:5570);
+ if(year===2022){assert.ok(total.pop>0);assert.ok(total.tx_emigracao>0);assert.equal(total.rateCoverage,5565);const available=[...base.values()].filter(r=>r.pop!==null);close(total.tx_emigracao,1000*available.reduce((s,r)=>s+r.emigrants,0)/available.reduce((s,r)=>s+r.pop,0));assert.equal(base.get('1504752').eficacia,-100);assert.equal(base.get('1504752').tx_emigracao,null);}
  else {assert.ok(total.tx_volume>0);assert.equal(base.has('1504752'),false);}
  const codes=new Set(demo.filter(r=>r.ufCode==='51').map(r=>r.code));
  const selected=m.selectProfiles(profiles,codes,m.emptyMigrationFilters);
@@ -31,4 +31,12 @@ assert.equal(m.deriveMigration(100,0,0).eficacia,null);
 assert.equal(m.sumMigration([null,undefined]),null);
 for(const [values,mode,count]of [[Array.from({length:100},(_,i)=>i+1),'Decis',10],[Array.from({length:101},(_,i)=>i-50),'5 classes negativas',10]]){if(!Array.isArray(values))continue;const c=map.buildMapClasses(values,true);if(mode!=='unused'){assert.ok(c.mode.includes(mode));assert.equal(c.classes.length,count);}close(c.classes.reduce((s,r)=>s+r.count,0)+c.zeros,values.length);}
 const sparse=map.buildMapClasses([-2,-1,0,...Array.from({length:100},(_,i)=>i+1)],true);assert.equal(sparse.classes.length,10);assert.ok(sparse.mode.startsWith('1 classe negativa'));assert.equal(map.mapClassColor(null,sparse),'#d7dee3');assert.equal(map.mapClassColor(0,sparse),'#fafafa');
+// Available-case aggregation must not dilute the denominator or discard valid rates.
+const partial=m.sumMigration([m.deriveMigration(1000,20,80),m.deriveMigration(null,0,50)]);
+close(partial.tx_emigracao,80);close(partial.emigrants,130);assert.equal(partial.negativeMunicipalities,2);close(partial.eficacia,-80);
+const balanced=m.sumMigration([m.deriveMigration(100,30,10),m.deriveMigration(200,0,20)]);
+assert.equal(balanced.balance,0);close(balanced.eficacia,-25);close(m.sumMigration([m.deriveMigration(100,30,10),m.deriveMigration(200,0,20)],'ratio').eficacia,0);
+const regional=[m.sumMigration([m.deriveMigration(1000,20,80),m.deriveMigration(null,0,50)],'ratio'),m.deriveMigration(500,5,10)];
+close(m.sumMigration(regional).tx_emigracao,60);assert.equal(m.sumMigration(regional).negativeMunicipalities,3);
+assert.ok(!('tx_volume_2022' in m.migrationLabels));assert.ok(!('tx_saldo_2022' in m.migrationLabels));assert.ok(m.migrationLabels.tx_emigracao_2022.endsWith('(‰)'));
 console.log('PASS: municipal/profile reconciliation, weighted ratios, missing denominators, filters, signed shares, means and map classes.');
