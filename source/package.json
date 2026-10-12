@@ -1,13 +1,19 @@
 {
   "name": "pndr-objetivo-3",
-  "version": "2.0.0",
+  "version": "3.1.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 4173",
-    "build": "vite build",
-    "process:data": "python scripts/process_data.py && node scripts/build_rgi_geo.mjs && python scripts/local_shapes.py",
-    "check": "tsc --noEmit"
+    "build": "vite build && python scripts/optimize_data.py",
+    "process:data": "python scripts/prepare_public.py && python scripts/process_data.py && python scripts/process_migration.py",
+    "check": "tsc --noEmit",
+    "process:maps": "python scripts/prepare_public.py && python scripts/local_shapes.py",
+    "test": "node scripts/test-migration.mjs && node scripts/test-optimized.mjs && python scripts/audit.py",
+    "release": "npm run check && npm run build && python scripts/build-release.py",
+    "prebuild": "python scripts/prepare_public.py",
+    "predev": "python scripts/prepare_public.py && python scripts/optimize_data.py --public --keep-raw",
+    "pretest": "python scripts/prepare_public.py"
   },
   "dependencies": {
     "react": "19.2.6",

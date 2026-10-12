@@ -1,47 +1,13 @@
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { merge, feature } from "topojson-client";
-
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const topology = JSON.parse(
-  fs.readFileSync(path.join(root, "public/data/municipios_ibge_topo.json"), "utf8"),
-);
-const dashboard = JSON.parse(
-  fs.readFileSync(path.join(root, "public/data/dashboard_obj3.json"), "utf8"),
-);
-
-const byMunicipality = new Map(
-  dashboard.municipalities.map((row) => [row.code, row]),
-);
-const grouped = new Map();
-
-for (const geometry of topology.objects.BRMU.geometries) {
-  const municipality = byMunicipality.get(String(geometry.properties.codarea));
-  if (!municipality?.rgiCode) continue;
-  const entry = grouped.get(municipality.rgiCode) ?? {
-    code: municipality.rgiCode,
-    name: municipality.rgi,
-    geometries: [],
-  };
-  entry.geometries.push(geometry);
-  grouped.set(municipality.rgiCode, entry);
-}
-
-const features = [...grouped.values()]
-  .sort((a, b) => a.code.localeCompare(b.code))
-  .map((entry) => ({
-    type: "Feature",
-    properties: { code: entry.code, name: entry.name },
-    geometry: merge(topology, entry.geometries),
-  }));
-
-const output = { type: "FeatureCollection", features };
-fs.writeFileSync(
-  path.join(root, "public/data/rgi_geo.json"),
-  JSON.stringify(output),
-);
-
-console.log(JSON.stringify({ rgiFeatures: features.length }));
-
-fs.writeFileSync(path.join(root,"public/data/municipios_geo.json"), JSON.stringify(feature(topology, topology.objects.BRMU)));
+import fs from 'node:fs';
+import {gunzipSync} from 'node:zlib';
+import {merge} from 'topojson-client';
+const base=new URL('../public/data/',import.meta.url);
+const data=JSON.parse(fs.readFileSync(new URL('dashboard_obj3.json',base)));
+const topology=JSON.parse(gunzipSync(fs.readFileSync(new URL('../data/municipios_ibge_topo.json.gz',import.meta.url))));
+const objects=Object.values(topology.objects)[0].geometries;
+const byCode=new Map(objects.map(g=>[String(g.properties.codarea),g]));
+const groups=new Map();for(const m of data.municipalities){const g=groups.get(m.rgiCode)||{name:m.rgi,geometries:[]};const shape=byCode.get(m.code);if(!shape)throw Error(m.code);g.geometries.push(shape);groups.set(m.rgiCode,g);}
+const features=[...groups].map(([code,g])=>({type:'Feature',properties:{code,name:g.name},geometry:merge(topology,g.geometries)}));
+if(features.length!==508)throw Error('Expected 508 RGI');
+fs.writeFileSync(new URL('rgi_geo.json',base),JSON.stringify({type:'FeatureCollection',features}));
+console.log('508 RGI reconstruídas a partir da malha municipal local.');

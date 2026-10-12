@@ -1,0 +1,290 @@
+{
+  "status": "PASS",
+  "years": {
+    "2010": {
+      "municipalities": 5565,
+      "profileRows": 57891,
+      "absentMunicipalities": [
+        {
+          "code": "1504752",
+          "name": "Mojuí dos Campos"
+        },
+        {
+          "code": "4212650",
+          "name": "Pescaria Brava"
+        },
+        {
+          "code": "4220000",
+          "name": "Balneário Rincão"
+        },
+        {
+          "code": "4314548",
+          "name": "Pinto Bandeira"
+        },
+        {
+          "code": "5006275",
+          "name": "Paraíso das Águas"
+        }
+      ],
+      "missingDenominator": [],
+      "rgiDifferences": [
+        {
+          "code": "2800506",
+          "name": "Areia Branca",
+          "migrationRgi": "280004",
+          "pndrRgi": "250004"
+        },
+        {
+          "code": "2801009",
+          "name": "Campo do Brito",
+          "migrationRgi": "280004",
+          "pndrRgi": "250004"
+        },
+        {
+          "code": "2801405",
+          "name": "Carira",
+          "migrationRgi": "280004",
+          "pndrRgi": "250004"
+        },
+        {
+          "code": "2802304",
+          "name": "Frei Paulo",
+          "migrationRgi": "280004",
+          "pndrRgi": "250004"
+        },
+        {
+          "code": "2802908",
+          "name": "Itabaiana",
+          "migrationRgi": "280004",
+          "pndrRgi": "250004"
+        },
+        {
+          "code": "2803708",
+          "name": "Macambira",
+          "migrationRgi": "280004",
+          "pndrRgi": "250004"
+        },
+        {
+          "code": "2803906",
+          "name": "Malhador",
+          "migrationRgi": "280004",
+          "pndrRgi": "250004"
+        },
+        {
+          "code": "2804102",
+          "name": "Moita Bonita",
+          "migrationRgi": "280004",
+          "pndrRgi": "250004"
+        },
+        {
+          "code": "2804458",
+          "name": "Nossa Senhora Aparecida",
+          "migrationRgi": "280004",
+          "pndrRgi": "250004"
+        },
+        {
+          "code": "2805000",
+          "name": "Pedra Mole",
+          "migrationRgi": "280004",
+          "pndrRgi": "250004"
+        },
+        {
+          "code": "2805208",
+          "name": "Pinhão",
+          "migrationRgi": "280004",
+          "pndrRgi": "250004"
+        },
+        {
+          "code": "2806008",
+          "name": "Ribeirópolis",
+          "migrationRgi": "280004",
+          "pndrRgi": "250004"
+        },
+        {
+          "code": "2806800",
+          "name": "São Domingos",
+          "migrationRgi": "280004",
+          "pndrRgi": "250004"
+        },
+        {
+          "code": "2807006",
+          "name": "São Miguel do Aleixo",
+          "migrationRgi": "280004",
+          "pndrRgi": "250004"
+        },
+        {
+          "code": "3302908",
+          "name": "Miguel Pereira",
+          "migrationRgi": "330006",
+          "pndrRgi": "290005"
+        },
+        {
+          "code": "3303856",
+          "name": "Paty do Alferes",
+          "migrationRgi": "330006",
+          "pndrRgi": "290005"
+        },
+        {
+          "code": "3304508",
+          "name": "Rio das Flores",
+          "migrationRgi": "330006",
+          "pndrRgi": "290005"
+        },
+        {
+          "code": "3306107",
+          "name": "Valença",
+          "migrationRgi": "330006",
+          "pndrRgi": "290005"
+        },
+        {
+          "code": "3306206",
+          "name": "Vassouras",
+          "migrationRgi": "330006",
+          "pndrRgi": "290005"
+        }
+      ],
+      "population5Plus": 176948310.3525752,
+      "immigrants": 13194730.13715923,
+      "emigrants": 13194730.13715923,
+      "balance": -1.504005808783404e-10,
+      "sha256": "9eee74395157f931cb1539119b56c246861846e6539466dba43e9c9f08361ba9",
+      "sourceRgiCount": 510,
+      "dashboardRgiCount": 508
+    },
+    "2022": {
+      "municipalities": 5570,
+      "profileRows": 61130,
+      "absentMunicipalities": [],
+      "missingDenominator": [
+        "1504752",
+        "4212650",
+        "4220000",
+        "4314548",
+        "5006275"
+      ],
+      "rgiDifferences": [
+        {
+          "code": "2800506",
+          "name": "Areia Branca",
+          "migrationRgi": "280004",
+          "pndrRgi": "250004"
+        },
+        {
+          "code": "2801009",
+          "name": "Campo do Brito",
+          "migrationRgi": "280004",
+          "pndrRgi": "250004"
+        },
+        {
+          "code": "2801405",
+          "name": "Carira",
+          "migrationRgi": "280004",
+          "pndrRgi": "250004"
+        },
+        {
+          "code": "2802304",
+          "name": "Frei Paulo",
+          "migrationRgi": "280004",
+          "pndrRgi": "250004"
+        },
+        {
+          "code": "2802908",
+          "name": "Itabaiana",
+          "migrationRgi": "280004",
+          "pndrRgi": "250004"
+        },
+        {
+          "code": "2803708",
+          "name": "Macambira",
+          "migrationRgi": "280004",
+          "pndrRgi": "250004"
+        },
+        {
+          "code": "2803906",
+          "name": "Malhador",
+          "migrationRgi": "280004",
+          "pndrRgi": "250004"
+        },
+        {
+          "code": "2804102",
+          "name": "Moita Bonita",
+          "migrationRgi": "280004",
+          "pndrRgi": "250004"
+        },
+        {
+          "code": "2804458",
+          "name": "Nossa Senhora Aparecida",
+          "migrationRgi": "280004",
+          "pndrRgi": "250004"
+        },
+        {
+          "code": "2805000",
+          "name": "Pedra Mole",
+          "migrationRgi": "280004",
+          "pndrRgi": "250004"
+        },
+        {
+          "code": "2805208",
+          "name": "Pinhão",
+          "migrationRgi": "280004",
+          "pndrRgi": "250004"
+        },
+        {
+          "code": "2806008",
+          "name": "Ribeirópolis",
+          "migrationRgi": "280004",
+          "pndrRgi": "250004"
+        },
+        {
+          "code": "2806800",
+          "name": "São Domingos",
+          "migrationRgi": "280004",
+          "pndrRgi": "250004"
+        },
+        {
+          "code": "2807006",
+          "name": "São Miguel do Aleixo",
+          "migrationRgi": "280004",
+          "pndrRgi": "250004"
+        },
+        {
+          "code": "3302908",
+          "name": "Miguel Pereira",
+          "migrationRgi": "330006",
+          "pndrRgi": "290005"
+        },
+        {
+          "code": "3303856",
+          "name": "Paty do Alferes",
+          "migrationRgi": "330006",
+          "pndrRgi": "290005"
+        },
+        {
+          "code": "3304508",
+          "name": "Rio das Flores",
+          "migrationRgi": "330006",
+          "pndrRgi": "290005"
+        },
+        {
+          "code": "3306107",
+          "name": "Valença",
+          "migrationRgi": "330006",
+          "pndrRgi": "290005"
+        },
+        {
+          "code": "3306206",
+          "name": "Vassouras",
+          "migrationRgi": "330006",
+          "pndrRgi": "290005"
+        }
+      ],
+      "population5Plus": 190305848.82794714,
+      "immigrants": 12875221.824623466,
+      "emigrants": 12875221.824623466,
+      "balance": 0.0,
+      "sha256": "66ad370250e3eb0befa6936529afe82a39c675c706ec2189847103f4c58e1d63",
+      "sourceRgiCount": 510,
+      "dashboardRgiCount": 508
+    }
+  }
+}

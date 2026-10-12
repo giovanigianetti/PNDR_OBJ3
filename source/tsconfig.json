@@ -1,9 +1,10 @@
 {
   "compilerOptions": {
-    "target": "ES2021",
+    "target": "ES2022",
     "lib": [
+      "ES2022",
       "DOM",
-      "ES2021"
+      "DOM.Iterable"
     ],
     "module": "ESNext",
     "moduleResolution": "Bundler",
@@ -12,6 +13,7 @@
     "skipLibCheck": true,
     "noEmit": true,
     "esModuleInterop": true,
+    "baseUrl": ".",
     "paths": {
       "@/*": [
         "./*"
@@ -20,9 +22,9 @@
   },
   "include": [
     "app",
-    "src",
     "components",
     "lib",
+    "src",
     "vite.config.ts"
   ]
 }

@@ -1,0 +1,12 @@
+{
+  "dataBytes": 13441821,
+  "largestPublishedDataBytes": 2063190,
+  "migrationParts": 25,
+  "lossless": true,
+  "allProfileRows": 119021,
+  "excludedSources": [
+    "Migracao_perfil_municipal_2010_1.xlsx",
+    "Migracao_perfil_municipal_2022_1.xlsx"
+  ],
+  "uploadInstruction": "Extract ZIP, upload index.html + .nojekyll + assets/ + data/ at branch root; source/ is optional."
+}

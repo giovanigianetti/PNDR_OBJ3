@@ -31,6 +31,10 @@ import {
   Users,
 } from "lucide-react";
 
+import {loadJson,loadMigrationProfile} from "@/lib/load-data";
+import { MigrationPanorama, MigrationKpis, MigrationAggregates, MigrationMethodology } from "@/components/migration-panels";
+import { migrationLabels, municipalMigration, sumMigration, emptyMigrationFilters, type MigrationKey, type MigrationMetrics, type MigrationIndicators, type ProfileData, type MigrationFilters } from "@/lib/migration";
+
 import { buildMapClasses, mapClassColor } from "@/lib/map-classes";
 import { useMapZoom } from "@/lib/use-map-zoom";
 import { Button } from "@/components/ui/button";
@@ -66,6 +70,8 @@ type Quality = {
 };
 
 type Municipality = {
+  m2010?: MigrationMetrics | null;
+  m2022?: MigrationMetrics | null;
   code: string;
   name: string;
   ufCode: string;
@@ -128,7 +134,7 @@ type FeatureCollection = {
   features: GeoFeature[];
 };
 
-type MetricKey =
+type MetricKey = MigrationKey
   | "popAbsolute"
   | "aging2010"
   | "olderShare2010"
@@ -140,6 +146,7 @@ type MetricKey =
   | "olderSharePp";
 
 const metricLabels: Record<MetricKey, string> = {
+  ...migrationLabels,
   popAbsolute: "Variação da população (pessoas)",
   aging2010: "Índice de envelhecimento 2010 (60+/0–14)",
   olderShare2010: "População com 60 anos ou mais em 2010 (%)",
@@ -245,6 +252,8 @@ function aggregateMunicipalities(
     y2010,
     y2022,
     change: deriveChange(y2010, y2022),
+    m2010: sumMigration(rows.map(r=>r.m2010)),
+    m2022: sumMigration(rows.map(r=>r.m2022)),
     municipalityCount: rows.length,
     quality: {
       suppression2010: rows.some((row) => row.quality.suppression2010) ? 1 : 0,
@@ -260,6 +269,7 @@ function aggregateMunicipalities(
 }
 
 function getMetric(row: Territory | Municipality, metric: MetricKey) {
+  if(metric in migrationLabels){const key=metric.slice(0,-5),year=metric.slice(-4);const m=year==="2010"?row.m2010:row.m2022;return m?.[key as "tx_imigracao"]??null;}
   switch (metric) {
     case "popAbsolute": return row.change.pop;
     case "aging2010": return row.y2010.aging60;
@@ -277,7 +287,10 @@ function getMetric(row: Territory | Municipality, metric: MetricKey) {
     case "olderSharePp":
       return row.change.olderSharePp;
   }
+  return null;
 }
+
+function metricUnit(metric:MetricKey){return metric.startsWith("tx_")?"‰":metric==="olderSharePp"?" p.p.":["aging2010","aging2022"].includes(metric)?" por 100":["pop2022","popAbsolute"].includes(metric)?" pessoas":"%";}
 
 function Kpi({ label, value, note, tone = "neutral" }: { label: string; value: string; note: string; tone?: string }) {
   return (
@@ -305,7 +318,7 @@ function FilterSelect({
   return (
     <label className="filter-field">
       <span>{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)}>
+      <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>
         <option value="">Todos</option>
         {options.map((option) => (
           <option key={option.value} value={option.value}>
@@ -365,7 +378,7 @@ function MapPanel({
     return geoPath(projection);
   }, [collection, features.length, height, width]);
   const values = territories.map((row) => getMetric(row, metric)).filter((value): value is number => value !== null && Number.isFinite(value));
-  const classes = buildMapClasses(values, ["popAbsolute","popPct","agingPct","olderSharePp"].includes(metric));
+  const classes = buildMapClasses(values, values.some(v=>v<0));
 
   return (
     <div className="map-wrap" ref={holder}>
@@ -405,7 +418,7 @@ function MapPanel({
         <div className="map-tooltip" style={{ left: Math.min(hover.x + 12, width - 245), top: hover.y + 10 }}>
           <strong>{hover.row.name}</strong>
           <span>{level === "municipality" ? `${hover.row.uf} · ${hover.row.rgi}` : `${hover.row.municipalityCount} municípios`}</span>
-          <b>{metricLabels[metric]}: {["pop2022", "popAbsolute"].includes(metric) ? integerNumber.format(getMetric(hover.row, metric) ?? 0) : fmt(getMetric(hover.row, metric), metric === "olderSharePp" ? " p.p." : ["aging2022", "aging2010"].includes(metric) ? " por 100" : "%")}</b>
+          <b>{metricLabels[metric]}: {["pop2022", "popAbsolute"].includes(metric) ? integerNumber.format(getMetric(hover.row, metric) ?? 0) : fmt(getMetric(hover.row, metric), metricUnit(metric))}</b>
           <small>{hover.row.dynamism}</small>
         </div>
       )}
@@ -415,6 +428,25 @@ function MapPanel({
 }
 
 export default function Dashboard() {
+  const [migration,setMigration]=useState<MigrationIndicators|null>(null);
+  const [profiles,setProfiles]=useState<Record<string,ProfileData|null>>({2010:null,2022:null});
+  const [migrationFilters,setMigrationFilters]=useState<MigrationFilters>(emptyMigrationFilters);
+  const [profileError,setProfileError]=useState("");
+  const [retryProfile,setRetryProfile]=useState(0);
+  const [activeTab,setActiveTab]=useState("panorama");
+  const [scatterX,setScatterX]=useState<MetricKey>("popPct");
+  const [scatterY,setScatterY]=useState<MetricKey>("agingPct");
+  const needProfiles=["migracao","agregados"].includes(activeTab)||Object.values(migrationFilters).some(Boolean);
+  useEffect(()=>{if(!needProfiles||(profiles[2010]&&profiles[2022]))return;let cancelled=false;
+    setProfileError("");
+    Promise.all([2010,2022].map(async year=>{
+      const profile=await loadMigrationProfile(year);
+      if(!cancelled)setProfiles(p=>({...p,[year]:profile}));
+    })).catch(e=>{if(!cancelled)setProfileError(String(e));});
+    return()=>{cancelled=true};
+  },[needProfiles,retryProfile]);
+  const migration2010=useMemo(()=>municipalMigration(migration,profiles[2010],2010,migrationFilters),[migration,profiles,migrationFilters]);
+  const migration2022=useMemo(()=>municipalMigration(migration,profiles[2022],2022,migrationFilters),[migration,profiles,migrationFilters]);
   const [data, setData] = useState<DashboardData | null>(null);
   const [validation, setValidation] = useState<Validation | null>(null);
   const [municipalityFeatures, setMunicipalityFeatures] = useState<GeoFeature[]>([]);
@@ -434,12 +466,14 @@ export default function Dashboard() {
 
   useEffect(() => {
     Promise.all([
-      fetch("./data/dashboard_obj3.json").then((response) => response.ok ? response.json() : Promise.reject(new Error(`Arquivo indisponível: ${response.url} (HTTP ${response.status})`))),
-      fetch("./data/validation.json").then((response) => response.ok ? response.json() : Promise.reject(new Error(`Arquivo indisponível: ${response.url} (HTTP ${response.status})`))),
-      fetch("./data/municipios_geo.json").then((response) => response.ok ? response.json() : Promise.reject(new Error(`Arquivo indisponível: ${response.url} (HTTP ${response.status})`))),
-      fetch("./data/rgi_geo.json").then((response) => response.ok ? response.json() : Promise.reject(new Error(`Arquivo indisponível: ${response.url} (HTTP ${response.status})`))),
+      loadJson("./data/migration_indicators.json.gz"),
+      loadJson("./data/dashboard_obj3.json.gz"),
+      loadJson("./data/validation.json.gz"),
+      loadJson("./data/municipios_geo.json.gz"),
+      loadJson("./data/rgi_geo.json.gz"),
     ])
-      .then(([dashboard, checks, topology, rgi]) => {
+      .then(([migrationData, dashboard, checks, topology, rgi]) => {
+        setMigration(migrationData);
         setData(dashboard);
         setValidation(checks);
         const converted = topology as FeatureCollection;
@@ -466,8 +500,8 @@ export default function Dashboard() {
           (!municipalityFilter || row.code === municipalityFilter) &&
           (!typologyFilter || row.typology === typologyFilter) &&
           (!dynamismFilter || row.dynamism === dynamismFilter),
-      ),
-    [dynamismFilter, geoFiltered, municipalityFilter, rgiFilter, typologyFilter],
+      ).map(row=>({...row,m2010:migration2010.get(row.code)??null,m2022:migration2022.get(row.code)??null})),
+    [dynamismFilter, geoFiltered, municipalityFilter, rgiFilter, typologyFilter,migration2010,migration2022],
   );
 
   const territories = useMemo<Territory[]>(() => {
@@ -527,8 +561,8 @@ export default function Dashboard() {
 
   const scatterGroups = useMemo(() => {
     const toPoint = (row: Territory) => ({
-      x: row.change.popPct ?? 0,
-      y: row.change.aging60Pct ?? 0,
+      x: getMetric(row,scatterX),
+      y: getMetric(row,scatterY),
       z: Math.max(18, Math.sqrt(row.y2022.pop)),
       name: row.name,
       uf: row.uf,
@@ -536,14 +570,14 @@ export default function Dashboard() {
     });
     return Object.keys(dynamismColors).map((name) => ({
       name,
-      data: territories.filter((row) => row.dynamism === name && row.change.popPct !== null && row.change.aging60Pct !== null).map(toPoint),
+      data: territories.filter((row) => row.dynamism === name && getMetric(row,scatterX) !== null && getMetric(row,scatterY) !== null).map(toPoint),
     }));
-  }, [territories]);
+  }, [territories,scatterX,scatterY]);
 
   const aggregateTerritories = useMemo(() => {
     if (!filteredMunicipalities.length) return [];
     if (aggregateLevel === "brasil") {
-      return [aggregateMunicipalities(filteredMunicipalities, { code: "BR", name: "Brasil" })];
+      return [aggregateMunicipalities(filteredMunicipalities, { code: "BR", name: filteredMunicipalities.length===5570?"Brasil":"Brasil · recorte filtrado" })];
     }
     const groups = new Map<string, Municipality[]>();
     for (const row of filteredMunicipalities) {
@@ -585,6 +619,7 @@ export default function Dashboard() {
     setTypologyFilter("");
     setDynamismFilter("");
     setSelectedCode("");
+    setMigrationFilters(emptyMigrationFilters);
   }
 
   function downloadCsv() {
@@ -660,6 +695,12 @@ export default function Dashboard() {
           <div className="filter-rule" />
           <FilterSelect label="Tipologia PNDR III" value={typologyFilter} onChange={setTypologyFilter} options={typologyOptions} />
           <FilterSelect label="Classe isolada de dinamismo" value={dynamismFilter} onChange={setDynamismFilter} options={Object.keys(dynamismColors).filter((v) => v !== "Múltiplas classes").map((value) => ({ value, label: value }))} />
+          <div className="filter-rule" />
+          <FilterSelect label="Papel na migração" value={migrationFilters.role} onChange={role=>setMigrationFilters(f=>({...f,role}))} options={[{value:"0",label:"Imigrante"},{value:"1",label:"Emigrante"}]} />
+          <FilterSelect label="Tipo" value={migrationFilters.type} onChange={type=>setMigrationFilters(f=>({...f,type}))} options={(migration?.types||[]).map((label,i)=>({value:String(i),label}))} />
+          <FilterSelect label="Tipo de migração" value={migrationFilters.type} onChange={type=>setMigrationFilters(f=>({...f,type}))} options={(migration?.types||[]).map((label,i)=>({value:String(i),label}))} />
+          <FilterSelect label="Região da contraparte" value={migrationFilters.region} onChange={region=>setMigrationFilters(f=>({...f,region}))} options={(migration?.regions||[]).map((label,i)=>({value:String(i),label}))} />
+          <small className="migration-filter-note">Filtros de migração afetam os indicadores migratórios. Tipo e tipo de migração são equivalentes na base.</small>
           <div className="filter-summary">
             <span>RECORTE ATIVO</span>
             <strong>{integerNumber.format(territories.length)} {level === "municipality" ? "municípios" : "RGI"}</strong>
@@ -667,9 +708,10 @@ export default function Dashboard() {
           </div>
         </aside>
 
-        <Tabs defaultValue="panorama" className="workspace">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="workspace">
           <TabsList variant="line" className="main-tabs">
             <TabsTrigger value="panorama"><Users /> Panorama</TabsTrigger>
+            <TabsTrigger value="migracao"><Users /> Panorama Migração</TabsTrigger>
             <TabsTrigger value="mapas"><MapIcon /> Mapas</TabsTrigger>
             <TabsTrigger value="dispersao"><BarChart3 /> Dispersão</TabsTrigger>
             <TabsTrigger value="agregados"><Database /> Agregados</TabsTrigger>
@@ -678,6 +720,9 @@ export default function Dashboard() {
           </TabsList>
 
           <div className="content">
+            {needProfiles&&(!profiles[2010]||!profiles[2022])&&<p role="status" className="migration-loading">{profileError?`Não foi possível carregar os perfis: ${profileError}`:"Carregando os perfis de migração…"}{profileError&&<button onClick={()=>setRetryProfile(v=>v+1)}>Tentar novamente</button>}</p>}
+            {migrationFilters.role&&<p className="migration-filter-note">Recorte de {migrationFilters.role==='0'?'imigração':'emigração'}: os saldos mostram a contribuição do papel selecionado. Selecione “Todos” para o saldo líquido completo.</p>}
+
             <TabsContent value="panorama">
               <div className="section-head"><div><p className="eyebrow dark">SÍNTESE DO RECORTE</p><h2>{currentSummary?.name ?? "Sem territórios"}</h2><p>Comparação dos Censos Demográficos de 2010 e 2022 em limites municipais compatíveis.</p></div>{currentSummary && <span className="territory-badge">{currentSummary.dynamism}</span>}</div>
               {currentSummary ? (
@@ -693,6 +738,7 @@ export default function Dashboard() {
                     <Kpi label="Idosos · 2022" value={fmt(currentSummary.y2022.olderShare, "%")} note="população com 60 anos ou mais" />
                     <Kpi label="Mudança na participação" value={fmt(currentSummary.change.olderSharePp, " p.p.")} note="diferença entre 2022 e 2010" tone="warning" />
                   </div>
+                  <MigrationKpis row={currentSummary} />
                   <div className="analysis-grid">
                     <Card className="panel span-two"><CardContent className="p-0"><div className="panel-head"><div><h3>Estrutura etária</h3><p>População por faixa etária nos dois censos</p></div></div><div className="chart-height"><ResponsiveContainer width="100%" height="100%"><BarChart data={ageChart} margin={{ top: 12, right: 10, left: 5, bottom: 46 }}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="faixa" interval={0} angle={-35} textAnchor="end" height={70} tick={{ fontSize: 11 }} /><YAxis tickFormatter={(value) => compactNumber.format(value)} tick={{ fontSize: 11 }} /><ChartTooltip formatter={(value) => integerNumber.format(Number(value))} /><Legend /><Bar dataKey="2010" fill="#9cafb7" radius={[3, 3, 0, 0]} /><Bar dataKey="2022" fill="#147d68" radius={[3, 3, 0, 0]} /></BarChart></ResponsiveContainer></div></CardContent></Card>
                     <Card className="panel profile-card"><CardContent className="p-0"><p className="eyebrow">PERFIL TERRITORIAL</p><h3>{currentSummary.typology}</h3><dl><div><dt>Dinamismo isolado</dt><dd>{currentSummary.dynamism}</dd></div><div><dt>RGI</dt><dd>{currentSummary.rgi || "Recorte agregado"}</dd></div></dl></CardContent></Card>
@@ -701,6 +747,9 @@ export default function Dashboard() {
               ) : <div className="empty-state">Nenhum território atende ao conjunto de filtros.</div>}
             </TabsContent>
 
+            <TabsContent value="migracao">
+              <MigrationPanorama indicators={migration} profiles={profiles} codes={new Set(filteredMunicipalities.filter(r=>!territories.some(t=>t.code===selectedCode)||(level==='municipality'?r.code===selectedCode:r.rgiCode===selectedCode)).map(r=>r.code))} filters={migrationFilters} territory={currentSummary?.name||"Recorte atual"} />
+            </TabsContent>
             <TabsContent value="mapas">
               <div className="section-head"><div><p className="eyebrow dark">LEITURA ESPACIAL</p><h2>Mapas territoriais</h2><p>Selecione um território no mapa para levá-lo ao resumo do painel.</p></div><label className="metric-select"><span>Indicador</span><select value={mapMetric} onChange={(event) => setMapMetric(event.target.value as MetricKey)}>{Object.entries(metricLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label></div>
               <Card className="map-card"><CardContent className="p-0"><MapPanel level={level} municipalityFeatures={municipalityFeatures} rgiFeatures={rgiFeatures} territories={territories} metric={mapMetric} selectedCode={selectedCode} onSelect={setSelectedCode} /><div className="map-footer"><span><b>{integerNumber.format(territories.length)}</b> territórios exibidos</span><span><b>{metricLabels[mapMetric]}</b></span><span>Valores ausentes em cinza</span></div></CardContent></Card>
@@ -708,12 +757,14 @@ export default function Dashboard() {
 
             <TabsContent value="dispersao">
               <div className="section-head"><div><p className="eyebrow dark">DINÂMICA E ENVELHECIMENTO</p><h2>Dispersão territorial</h2><p>Cada ponto representa {level === "municipality" ? "um município" : "uma Região Geográfica Imediata"}. O tamanho acompanha a população de 2022.</p></div></div>
-              <Card className="panel"><CardContent className="p-0"><div className="scatter-legend">{Object.entries(dynamismColors).map(([label, color]) => <span key={label}><i style={{ background: color }} />{label}</span>)}</div><div className="scatter-height"><ResponsiveContainer width="100%" height="100%"><ScatterChart margin={{ top: 15, right: 20, bottom: 30, left: 15 }}><CartesianGrid strokeDasharray="4 4" /><XAxis type="number" dataKey="x" name="Variação populacional" unit="%" tick={{ fontSize: 11 }} label={{ value: "Variação da população 2010–2022 (%)", position: "insideBottom", offset: -18 }} /><YAxis type="number" dataKey="y" name="Variação do índice" unit="%" tick={{ fontSize: 11 }} label={{ value: "Variação do índice 60+/0–14 (%)", angle: -90, position: "insideLeft" }} /><ZAxis type="number" dataKey="z" range={[22, 210]} /><ChartTooltip cursor={{ strokeDasharray: "3 3" }} content={({ active, payload }) => active && payload?.[0] ? <div className="chart-tooltip"><strong>{payload[0].payload.name}</strong><span>{payload[0].payload.uf} · {payload[0].payload.dynamism}</span><b>População: {fmt(payload[0].payload.x, "%")}</b><b>Envelhecimento: {fmt(payload[0].payload.y, "%")}</b></div> : null} />{scatterGroups.map((group) => <Scatter key={group.name} name={group.name} data={group.data} fill={dynamismColors[group.name]} fillOpacity={0.64} />)}</ScatterChart></ResponsiveContainer></div></CardContent></Card>
+              <div className="scatter-selectors">{([['Eixo X',scatterX,setScatterX],['Eixo Y',scatterY,setScatterY]] as const).map(([label,value,setter])=><label className="metric-select" key={label}><span>{label}</span><select value={value} onChange={e=>setter(e.target.value as MetricKey)}>{Object.entries(metricLabels).map(([key,title])=><option key={key} value={key}>{title}</option>)}</select></label>)}</div>
+              <Card className="panel"><CardContent className="p-0"><div className="scatter-legend">{Object.entries(dynamismColors).map(([label, color]) => <span key={label}><i style={{ background: color }} />{label}</span>)}</div><div className="scatter-height"><ResponsiveContainer width="100%" height="100%"><ScatterChart margin={{ top: 15, right: 20, bottom: 30, left: 15 }}><CartesianGrid strokeDasharray="4 4" /><XAxis type="number" dataKey="x" name={metricLabels[scatterX]} unit={metricUnit(scatterX)} tick={{ fontSize: 11 }} label={{ value: metricLabels[scatterX], position: "insideBottom", offset: -18 }} /><YAxis type="number" dataKey="y" name={metricLabels[scatterY]} unit={metricUnit(scatterY)} tick={{ fontSize: 11 }} label={{ value: metricLabels[scatterY], angle: -90, position: "insideLeft" }} /><ZAxis type="number" dataKey="z" range={[22, 210]} /><ChartTooltip cursor={{ strokeDasharray: "3 3" }} content={({ active, payload }) => active && payload?.[0] ? <div className="chart-tooltip"><strong>{payload[0].payload.name}</strong><span>{payload[0].payload.uf} · {payload[0].payload.dynamism}</span><b>{metricLabels[scatterX]}: {fmt(payload[0].payload.x,metricUnit(scatterX))}</b><b>{metricLabels[scatterY]}: {fmt(payload[0].payload.y,metricUnit(scatterY))}</b></div> : null} />{scatterGroups.map((group) => <Scatter key={group.name} name={group.name} data={group.data} fill={dynamismColors[group.name]} fillOpacity={0.64} />)}</ScatterChart></ResponsiveContainer></div></CardContent></Card>
               <div className="rank-grid"><Card className="panel"><CardContent className="p-0"><h3>Maiores retrações populacionais</h3>{[...territories].sort((a, b) => (a.change.popPct ?? 0) - (b.change.popPct ?? 0)).slice(0, 8).map((row, index) => <div className="rank-row" key={row.code}><b>{index + 1}</b><span><strong>{row.name}</strong><small>{row.uf} · {row.dynamism}</small></span><em>{pct(row.change.popPct)}</em></div>)}</CardContent></Card><Card className="panel"><CardContent className="p-0"><h3>Maior avanço do índice 60+/0–14</h3>{[...territories].sort((a, b) => (b.change.aging60Pct ?? 0) - (a.change.aging60Pct ?? 0)).slice(0, 8).map((row, index) => <div className="rank-row" key={row.code}><b>{index + 1}</b><span><strong>{row.name}</strong><small>{row.uf} · {row.dynamism}</small></span><em>{pct(row.change.aging60Pct)}</em></div>)}</CardContent></Card></div>
             </TabsContent>
 
             <TabsContent value="agregados">
               <div className="section-head"><div><p className="eyebrow dark">ESCALAS DE AGREGAÇÃO</p><h2>Estados, macrorregiões e Brasil</h2><p>Numeradores e denominadores são somados antes do cálculo dos indicadores.</p></div><label className="metric-select"><span>Agregação</span><select value={aggregateLevel} onChange={(event) => setAggregateLevel(event.target.value as "uf" | "region" | "brasil")}><option value="uf">Unidades da Federação</option><option value="region">Macrorregiões</option><option value="brasil">Brasil</option></select></label></div>
+              <MigrationAggregates territories={aggregateTerritories} municipalities={filteredMunicipalities} level={aggregateLevel} profiles={profiles} indicators={migration} filters={migrationFilters} />
               <div className="aggregate-grid">{aggregateTerritories.map((row) => <Card className="aggregate-card" key={row.code}><CardContent className="p-0"><span>{row.name}</span><strong>{compactNumber.format(row.y2022.pop)}</strong><small>População em 2022</small><div><b className={(row.change.popPct ?? 0) < 0 ? "negative" : "positive"}>{pct(row.change.popPct)}</b><em>população</em></div><div><b>{fmt(row.y2022.aging60)}</b><em>índice 60+/0–14</em></div><div><b>{fmt(row.y2022.olderShare, "%")}</b><em>pessoas 60+</em></div><div><b>{pct(row.change.aging60Pct)}</b><em>var. índice 60+/0–14</em></div><div><b>{fmt(row.change.olderSharePp," p.p.")}</b><em>var. participação 60+</em></div><div><b>{pct(row.y2010.older60 ? 100*(row.y2022.older60/row.y2010.older60-1) : null)}</b><em>var. população 60+</em></div><div><b>{integerNumber.format(row.y2022.older60-row.y2010.older60)}</b><em>var. absoluta 60+ (pessoas)</em></div></CardContent></Card>)}</div>
               <Card className="panel"><CardContent className="p-0"><h3>Comparação completa por faixa etária</h3><p>Abra um território para comparar os censos. Percentuais e índices são recalculados a partir das somas do recorte.</p>{aggregateTerritories.map((row) => <details key={row.code}><summary>{row.name} · 2010: {integerNumber.format(row.y2010.pop)} · 2022: {integerNumber.format(row.y2022.pop)}</summary><p>Variação populacional: {integerNumber.format(row.change.pop)} pessoas ({pct(row.change.popPct)}). Índice 60+/0–14: {fmt(row.y2010.aging60)} → {fmt(row.y2022.aging60)}; variação {pct(row.change.aging60Pct)}.</p><div className="table-wrap"><table><thead><tr><th>Faixa etária</th><th>2010</th><th>% 2010</th><th>2022</th><th>% 2022</th><th>Variação absoluta</th><th>Variação %</th></tr></thead><tbody>{data.meta.ageLabels.map((label,i) => <tr key={label}><td>{label}</td><td>{integerNumber.format(row.y2010.ages[i])}</td><td>{fmt(row.y2010.pop ? 100*row.y2010.ages[i]/row.y2010.pop : null,"%")}</td><td>{integerNumber.format(row.y2022.ages[i])}</td><td>{fmt(row.y2022.pop ? 100*row.y2022.ages[i]/row.y2022.pop : null,"%")}</td><td>{integerNumber.format(row.y2022.ages[i]-row.y2010.ages[i])}</td><td>{pct(row.y2010.ages[i] ? 100*(row.y2022.ages[i]/row.y2010.ages[i]-1) : null)}</td></tr>)}</tbody></table></div></details>)}</CardContent></Card>
               <Card className="panel"><CardContent className="p-0"><h3>Variação populacional por território agregado</h3><div className="aggregate-chart"><ResponsiveContainer width="100%" height="100%"><BarChart data={aggregateTerritories.slice(0, 27).map((row) => ({ name: row.name, variacao: row.change.popPct }))} layout="vertical" margin={{ left: 40, right: 28 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} /><XAxis type="number" unit="%" /><YAxis dataKey="name" type="category" width={105} tick={{ fontSize: 11 }} /><ChartTooltip formatter={(value) => fmt(Number(value), "%")} /><Bar dataKey="variacao" fill="#147d68" radius={[0, 4, 4, 0]} /></BarChart></ResponsiveContainer></div></CardContent></Card>
@@ -733,6 +784,7 @@ export default function Dashboard() {
               <p>Nos mapas, as classes são definidas por decis no recorte. Quando há valores negativos e positivos, são cinco classes por sinal; com menos de 20 negativos, usa-se uma classe negativa e nove positivas. Zero é neutro. Sem valores positivos, os negativos são divididos em decis. Limites coincidentes são reunidos para manter valores iguais na mesma classe. Assim, recortes pequenos ou com muitos valores iguais podem ter menos classes.</p>
               <div className="formula-grid"><Card className="formula-card"><CardContent className="p-0"><span>Variação populacional</span><code>100 × (População 2022 / População 2010 − 1)</code><p>Variação relativa entre os dois censos.</p></CardContent></Card><Card className="formula-card warning"><CardContent className="p-0"><span>Índice disponível</span><code>100 × (População 60+ / População 0–14)</code><p>Medida alternativa, porque a faixa 60–69 não permite isolar a população de 65 anos ou mais.</p></CardContent></Card><Card className="formula-card"><CardContent className="p-0"><span>Participação de idosos</span><code>100 × (População 60+ / População total)</code><p>A diferença temporal é expressa em pontos percentuais.</p></CardContent></Card></div>
               <Card className="panel prose"><CardContent className="p-0"><h3>Compatibilização 2010 → 2022</h3><p>O histórico de formação dos setores conecta cada setor de 2022 aos seus antecedentes de 2010. Pares duplicados foram removidos. Quando um setor de 2010 alcança apenas um município de 2022, seus moradores são integralmente atribuídos a ele. Nos casos em que alcança mais de um município, os valores são rateados segundo a população de 2022 dos setores descendentes; se essa massa é zero ou ausente, utiliza-se a proporção da contagem de setores descendentes.</p><p>Valores fracionários resultantes do rateio são preservados. Células suprimidas contribuem com zero somente na soma observada, sem tentativa de recuperar conteúdo protegido.</p><h3>Classificação isolada de dinamismo</h3><p>Os pontos de corte são {decimalNumber.format(validation.dynamism.q25)} e {decimalNumber.format(validation.dynamism.q75)}. A classificação resultou em {validation.dynamism.counts["Baixo Dinamismo"]} IDs de Baixo, {validation.dynamism.counts["Médio Dinamismo"]} de Médio e {validation.dynamism.counts["Alto Dinamismo"]} de Alto Dinamismo. Os filtros PNDR e dinamismo selecionam municípios antes da agregação: uma RGI filtrada pode representar apenas parte de seus municípios.</p></CardContent></Card>
+              <MigrationMethodology />
               <div className="qa-grid"><span><b>{validation.uniqueMunicipalities.census2010}</b>municípios em 2010</span><span><b>{validation.uniqueMunicipalities.census2022}</b>municípios em 2022</span><span><b>{validation.dynamism.uniqueTypologyIds}</b>IDs Tipologia</span></div>
             </TabsContent>
           </div>

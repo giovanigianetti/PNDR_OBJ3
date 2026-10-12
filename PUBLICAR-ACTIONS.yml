@@ -22,7 +22,7 @@ jobs:
         run: |
           test -f index.html
           test -d assets
-          test -f data/dashboard_obj3.json
+          test -f data/dashboard_obj3.json.gz
           mkdir site
           cp index.html site/
           cp -r assets data site/
